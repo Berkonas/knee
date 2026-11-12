@@ -103,6 +103,7 @@ def analyse(pose: PoseSeries, body_mass: float, height_m: float, settings: Analy
     n = len(t)
     gait = detect_gait(kin, s.contact_rel_threshold, s.contact_min_duration_s)
     stance = stance_mask(t, gait.contacts.get(side, []))
+    quality: dict = {}
     if not stance.any():
         notes.append(f"No stance phase detected for the {side} foot; kinetics need foot contacts.")
 
@@ -142,9 +143,12 @@ def analyse(pose: PoseSeries, body_mass: float, height_m: float, settings: Analy
         ts[f"pole_{pside}_angle_deg"] = ang
         ts[f"pole_{pside}_tip_source"] = tr.source
         tip_lab = kmod.to_lab(tr.tip, pose.height, kin.direction, scale)
-        hand_lab = kin.get(pside, "wrist")
+        hand_lab = dyn.grip_point(kin, pside)
         d, assumed = dyn.pole_direction(hand_lab, tip_lab, n)
-        pole_dirs[pside] = d
+        if assumed:
+            notes.append(f"{pside} pole tip missing in most frames: pole direction not used (would be assumed vertical).")
+        else:
+            pole_dirs[pside] = d
         ivs = pole_contacts(tr, s.contact_rel_threshold, s.contact_min_duration_s)
         if ivs is None:
             notes.append(f"{pside} pole tracking covers <50% of frames; pole contacts not estimated.")
@@ -169,7 +173,7 @@ def analyse(pose: PoseSeries, body_mass: float, height_m: float, settings: Analy
 
     # ---- external forces ------------------------------------------------------------------
     pl = dyn.PoleLoad()
-    fdat = forces.resample(t, s.force_offset_s) if forces is not None else {}
+    fdat = forces.resample(t, s.force_offset_s, s.cutoff_hz) if forces is not None else {}
     if uses_poles and s.pole_force_mode == "measured" and any(k in fdat for k in ("pole_left", "pole_right")):
         pl.source = "measured"
         for pside in ("left", "right"):
@@ -178,6 +182,8 @@ def analyse(pose: PoseSeries, body_mass: float, height_m: float, settings: Analy
                 pl.direction[pside] = pole_dirs.get(pside, np.tile([0.0, 1.0], (n, 1)))
                 if pside not in pole_dirs:
                     pl.direction_assumed_vertical = True
+    elif uses_poles and s.pole_force_mode == "measured":
+        notes.append("Measured pole force selected, but no force file with pole_left_n/pole_right_n columns was given.")
     elif uses_poles and s.pole_force_mode == "scenario":
         contact = dict(pole_contact)
         if not contact:
@@ -195,9 +201,17 @@ def analyse(pose: PoseSeries, body_mass: float, height_m: float, settings: Analy
         M.append(MetricValue("pole_support_fraction", frac, kind,
                              "" if kind == "measured" else f"{s.pole_pct_bw:g}% BW per planted pole (assumed)"))
     else:
-        M.append(MetricValue("pole_support_fraction", None, "unavailable",
-                             "Pole force cannot be measured from video. Enter a scenario or import load-cell data."
-                             if uses_poles else "No poles in this condition."))
+        why = ("No pole columns in the force file." if uses_poles and s.pole_force_mode == "measured" else
+               "Pole force cannot be measured from video. Enter a scenario or import load-cell data."
+               if uses_poles else "No poles in this condition.")
+        M.append(MetricValue("pole_support_fraction", None, "unavailable", why))
+
+    other = "left" if side == "right" else "right"
+    if stance.any() and not gait.contacts.get(other):
+        notes.append(f"No contacts detected for the {other} foot (often hidden in a side view): double support "
+                     f"cannot be identified, so the {side} leg is assumed to carry all leg support throughout its "
+                     "stance. Knee loads are an upper bound (typically ~10-20% higher impulse).")
+        quality["double_support_unknown"] = True
 
     # ---- lower-limb kinetics ----------------------------------------------------------------
     kinetics_kind = None
@@ -208,8 +222,16 @@ def analyse(pose: PoseSeries, body_mass: float, height_m: float, settings: Analy
     elif measured_grf:
         fv = np.nan_to_num(fdat["vertical"])
         fh = np.nan_to_num(fdat.get("horizontal", np.zeros(n)))
+        loaded = fv > 20.0
+        if (loaded & ~stance).sum() > 0.2 * max(1, loaded.sum()):
+            notes.append(f"Force data show load outside the {side} foot's stance: another foot may be on the plate. "
+                         f"Only force during the {side} stance is applied to the {side} leg.")
+        fv = np.where(stance, fv, 0.0)
+        fh = np.where(stance, fh, 0.0)
         if "cop_x" in fdat and s.plate_origin_x_m is not None:
-            cop = np.stack([s.plate_origin_x_m + fdat["cop_x"], np.nanmin(dyn.cop_on_foot(kin, side, 0.5)[:, 1]) * np.ones(n)], axis=1)
+            foot_y = dyn.cop_on_foot(kin, side, 0.5)[:, 1]
+            plate_y = np.nanmedian(foot_y[loaded & stance]) if (loaded & stance).any() else np.nanmedian(foot_y)
+            cop = np.stack([s.plate_origin_x_m + fdat["cop_x"], np.full(n, plate_y)], axis=1)
         else:
             cop = dyn.cop_on_foot(kin, side, s.cop_fraction)
             notes.append("COP not measured/located: assumed on the foot (cop_fraction).")
@@ -234,6 +256,13 @@ def analyse(pose: PoseSeries, body_mass: float, height_m: float, settings: Analy
                      f"COP at {s.cop_fraction:.2f} of heel-to-toe, inertia neglected).")
 
     sens_rows = []
+    if m_knee is not None and stance.any():
+        valid = np.isfinite(m_knee[stance]).mean()
+        if valid < 0.8:
+            notes.append(f"Knee moment could be computed in only {100 * valid:.0f}% of stance frames "
+                         "(missing landmarks); kinetics reported as unavailable.")
+            m_knee = None
+            reason_override = "Too many stance frames with missing landmarks."
     if m_knee is not None:
         ts[f"{side}_knee_extensor_moment_nm"] = m_knee
         mk_pos = np.where(stance, np.nan_to_num(m_knee), 0.0)
@@ -267,9 +296,15 @@ def analyse(pose: PoseSeries, body_mass: float, height_m: float, settings: Analy
                     support = dyn.total_support_force(kin, body_mass, supp == "dynamic")
                 except ValueError:
                     continue
-                for copf in (0.25, 0.5, 0.75):
+                if np.isfinite(support[stance]).mean() < 0.8:
+                    notes.append(f"Sensitivity rows for the {supp} support model skipped (COM not computable).")
+                    continue
+                for copf in sorted({0.25, 0.5, 0.75, round(s.cop_fraction, 3)}):
                     f_foot = np.nan_to_num(share) * np.maximum(support - pole_vert, 0.0)
-                    mk = np.where(stance, dyn.quasi_static_knee(kin, side, f_foot, dyn.cop_on_foot(kin, side, copf)), 0)
+                    mk = np.where(stance, dyn.quasi_static_knee(kin, side, f_foot, dyn.cop_on_foot(kin, side, copf)), np.nan)
+                    if np.isfinite(mk[stance]).mean() < 0.8:
+                        continue
+                    mk = np.nan_to_num(mk)
                     for r in (s.moment_arm_range_m[0], s.moment_arm_m, s.moment_arm_range_m[1]):
                         sens_rows.append({"support_model": supp, "cop_fraction": copf, "moment_arm_m": r,
                                           "peak_knee_moment_nm_per_kg": float(np.nanmax(mk)) / body_mass,
@@ -282,6 +317,8 @@ def analyse(pose: PoseSeries, body_mass: float, height_m: float, settings: Analy
                 mv.note = "range = sensitivity to support model and COP"
     else:
         reason = ("Needs a metric scale." if scale is None else "Needs detected foot contacts.")
+        if "reason_override" in locals():
+            reason = reason_override
         for key in ("knee_ext_moment_peak", "quad_force_peak", "quad_force_peak_bw",
                     "knee_ext_impulse_total", "knee_ext_impulse_per_m", "knee_neg_work"):
             M.append(MetricValue(key, None, "unavailable", reason))
@@ -295,9 +332,11 @@ def analyse(pose: PoseSeries, body_mass: float, height_m: float, settings: Analy
             loaded = f > 0
             ts[f"{pside}_elbow_moment_nm"] = np.where(loaded, am.elbow, np.nan)
             ts[f"{pside}_shoulder_moment_nm"] = np.where(loaded, am.shoulder, np.nan)
-            if loaded.any():
-                el_pk.append(np.nanmax(np.abs(am.elbow[loaded])))
-                sh_pk.append(np.nanmax(np.abs(am.shoulder[loaded])))
+            for arr, out_list in ((am.elbow, el_pk), (am.shoulder, sh_pk)):
+                v = np.abs(arr[loaded])
+                v = v[np.isfinite(v)]
+                if v.size:
+                    out_list.append(float(v.max()))
         kind = "model" if pl.source == "measured" else "scenario"
         M.append(MetricValue("elbow_moment_peak", max(el_pk) if el_pk else None, kind if el_pk else "unavailable",
                              "absolute value; quasi-static"))
@@ -319,7 +358,7 @@ def analyse(pose: PoseSeries, body_mass: float, height_m: float, settings: Analy
     events = pd.DataFrame(ev_rows, columns=["event", "start_s", "end_s", "duration_s", "angle_at_contact_deg"])
     events = events.sort_values("start_s").reset_index(drop=True)
 
-    quality = dict(kin.quality)
+    quality = {**kin.quality, **quality}
     seg = segments or {}
     if scale and seg.get("thigh_m") and seg.get("shank_m"):
         th = np.nanmedian(np.linalg.norm(kin.get(side, "hip") - kin.get(side, "knee"), axis=1))

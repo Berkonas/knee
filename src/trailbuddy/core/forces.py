@@ -2,7 +2,8 @@
 
 CSV format (header row required, comma-separated):
   time_s, then any of:
-    fz_n | fy_n | vertical_n  -> vertical ground reaction force (N, + up)
+    fz_n | vertical_n         -> vertical ground reaction force (N, + up). ('fy' is NOT accepted:
+                                 on AMTI/Kistler plates Fy is anterior-posterior.)
     fx_n | ap_n               -> horizontal force along the walking direction (N, + forward)
     cop_x_m                   -> COP along the walking direction (m) in the plate frame
     pole_left_n, pole_right_n -> pole axial forces (N, compression +)
@@ -19,7 +20,7 @@ import numpy as np
 import pandas as pd
 
 ALIASES = {
-    "vertical": ["fz_n", "fy_n", "vertical_n", "fz", "fy"],
+    "vertical": ["fz_n", "vertical_n", "fz"],
     "horizontal": ["fx_n", "ap_n", "fx"],
     "cop_x": ["cop_x_m", "copx", "cop_x"],
     "pole_left": ["pole_left_n", "pole_l_n"],
@@ -33,9 +34,19 @@ class ForceData:
     channels: dict[str, np.ndarray] = field(default_factory=dict)
     source: str = ""
 
-    def resample(self, t_video: np.ndarray, offset_s: float = 0.0) -> dict[str, np.ndarray]:
+    def resample(self, t_video: np.ndarray, offset_s: float = 0.0, cutoff_hz: float | None = None) -> dict[str, np.ndarray]:
+        """Low-pass at the native rate (same cut-off as the kinematics, to avoid spurious impact
+        artefacts in joint moments) and then resample onto the video time base."""
+        from .signal import lowpass
+
         tt = self.t + offset_s
-        return {k: np.interp(t_video, tt, v, left=np.nan, right=np.nan) for k, v in self.channels.items()}
+        fs = 1.0 / float(np.median(np.diff(self.t)))
+        out = {}
+        for k, v in self.channels.items():
+            if cutoff_hz and k != "cop_x":
+                v = lowpass(v, fs, cutoff_hz)
+            out[k] = np.interp(t_video, tt, v, left=np.nan, right=np.nan)
+        return out
 
 
 def load_force_csv(path: str | Path) -> ForceData:

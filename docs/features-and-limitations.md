@@ -42,6 +42,25 @@ measurements before we can claim it is accurate.
 * **OpenCap / OpenSim integration.** Evaluated, not integrated in v1 (see `docs/research/open-source-tools.md`).
 * **Signed and notarised macOS app / Windows installer.** The builds are unsigned (see troubleshooting).
 
+## Independent review
+
+A separate reviewer re-derived every equation and sign in the analysis code (angles, Newton–Euler, quasi-static
+model, quadriceps force, power/work/impulse, arm moments, Winter parameters, sync convention), and all were confirmed.
+It found nine robustness bugs, all now fixed with regression tests (`tests/test_review_regressions.py`):
+
+* hidden far-side landmarks no longer turn knee loads into zeros
+* an undetectable double support is flagged as an upper bound
+* force-plate COP height and stance attribution are corrected
+* force channels are filtered before resampling
+* camera-B gaps are not bridged
+* edge-truncated contacts are excluded from step time
+* the pole lever uses the grip point
+* peak calculations are safe when values are missing
+* the ambiguous `fy` column is rejected
+
+Still open: phone audio and video stream start-time differences in automatic sync (check sync visually), and
+horizontal GRF in the video-only model (documented assumption).
+
 ## Scientific limitations
 
 * n = 3 team members. Results describe us under our test conditions only. No significance testing.

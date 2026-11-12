@@ -27,6 +27,9 @@ Every output carries one label. The app shows it as a coloured badge, and every 
 * **Gap filling.** Gaps of 0.1 s or less are filled by linear interpolation and flagged. Longer gaps stay empty (`signal.fill_gaps`).
 * **Filtering.** A 2nd-order Butterworth low-pass filter runs forward and backward, which gives zero phase lag
   and an effective 4th-order response. The default cutoff is 6 Hz (Winter et al., 1974; Winter, 2009) and can be changed (`signal.lowpass`).
+* **Missing far-side landmarks.** In a side view the far limbs are often hidden. Mid-hip and mid-shoulder use
+  whichever side is visible, and whole-body centre of mass substitutes the visible side for hidden far-side segments.
+* **Camera-B resampling** never bridges gaps longer than 0.1 s.
 * **Lab frame.** x points horizontally in the direction of travel (the app detects which way the person walks across the image) and y points up.
   Pixels are converted to metres with a scale *s* (m/px):
   * **Measured distance (preferred):** *s* = *d*<sub>real</sub> / *d*<sub>px</sub> between two points you click,
@@ -63,7 +66,7 @@ tread while it carries weight, so this velocity-threshold approach works for des
 used for level walking (O'Connor et al., 2007; Zeni et al., 2008). Pole-tip contacts are detected the same way.
 Treat event times as estimates accurate to about ±1–2 frames, and spot-check them on the video.
 
-* Step time is the time between contacts of alternating feet. Cadence = 60 / mean step time.
+* Step time is the time between foot strikes of alternating feet. A contact that is already in progress at the first frame is not a strike, so it is excluded. Cadence = 60 / mean step time.
 * Stance time is the duration of each complete contact. Contacts cut off by the clip edges are excluded.
 
 ## 5. Lower-limb kinetics
@@ -91,7 +94,9 @@ Video cannot measure external forces, so a transparent quasi-static model is use
 * **F<sub>support</sub>:** body weight *mg* (static, the default), or *m*(*g* + *a*<sub>COM,y</sub>), where the whole-body
   centre of mass comes from Winter segment masses (dynamic option). The dynamic option uses the second derivative of video
   data and is noisy.
-* **share(t):** the analysed leg carries 1 in single support, 0 in swing, and changes linearly from the trailing leg to the leading leg during double support (`dynamics.leg_load_share`).
+* **share(t):** the analysed leg carries 1 in single support, 0 in swing, and changes linearly from the trailing leg to the leading leg during double support (`dynamics.leg_load_share`). If the other foot's contacts can't be detected (it is often hidden), double
+  support can't be identified. The analysed leg is then assumed to carry all support, the result is an **upper bound**,
+  and a note is added.
 * **x<sub>COP</sub>:** an assumed point on the foot, given as a fraction of the heel-to-toe distance (default 0.5).
 * **Assumptions:** the GRF is vertical, and inertia and the weight of the shank and foot are ignored. The model therefore
   **does not capture impact peaks**, which during stair descent can exceed body weight. It is meant for
@@ -165,7 +170,9 @@ Automatic sync (`sync.sync_audio`) works in five steps:
 4. Take the strongest onset as the clap.
 5. Refine the offset by cross-correlating the envelopes within ±0.25 s.
 
-Clap clarity is the peak divided by the 99th percentile of the rest of the envelope, and the app warns when it is below 3. Manual sync uses the frame where the hands first touch in each video:
+Known limitation: phone MP4 files can start their audio stream a few tens of milliseconds before or after the
+first video frame, and this offset can differ between phones. The app does not yet correct for it, so check sync
+visually on the clap frame, or use manual frame sync when single-frame precision matters. Clap clarity is the peak divided by the 99th percentile of the rest of the envelope, and the app warns when it is below 3. Manual sync uses the frame where the hands first touch in each video:
 offset = *f*<sub>A</sub>/fps<sub>A</sub> − *f*<sub>B</sub>/fps<sub>B</sub>. Convention: *t*<sub>A</sub> = *t*<sub>B</sub> + offset. Different frame rates are
 handled by resampling camera-B landmarks onto camera A's time base with linear interpolation. The tests check
 offsets within 5 ms on raw audio and within 8 ms after AAC encoding in MP4 files, with cameras at 60 fps and 30 fps.
@@ -184,6 +191,7 @@ Full annotated list with verified DOIs: [research/literature.md](research/litera
 
 * Abdel-Aziz, Y. I., & Karara, H. M. (1971/2015). Direct linear transformation… *Photogramm. Eng. Remote Sens., 81*(2), 103–107. https://doi.org/10.14358/PERS.81.2.103
 * Bazarevsky, V., et al. (2020). BlazePose: On-device real-time body pose tracking. arXiv:2006.10204.
+* de Leva, P. (1996). Adjustments to Zatsiorsky-Seluyanov's segment inertia parameters. *J. Biomech., 29*(9), 1223–1230. https://doi.org/10.1016/0021-9290(95)00178-6
 * Dempster, W. T. (1955). *Space requirements of the seated operator* (WADC-TR-55-159).
 * Jensen, S. B., et al. (2011). Can hiking poles reduce knee joint compression force? *Scand. J. Med. Sci. Sports* (see literature.md).
 * Krevolin, J. L., Pandy, M. G., & Pearce, J. C. (2004). *J. Biomech., 37*(5), 785–788. https://doi.org/10.1016/j.jbiomech.2003.09.010

@@ -143,8 +143,12 @@ def common_window(dur_a: float, dur_b: float, offset_s: float) -> tuple[float, f
     return start, end
 
 
-def resample_to(t_src: np.ndarray, y_src: np.ndarray, t_dst: np.ndarray) -> np.ndarray:
-    """Linear resampling onto another time base (handles different frame rates); NaN outside."""
+def resample_to(t_src: np.ndarray, y_src: np.ndarray, t_dst: np.ndarray, max_gap_s: float = 0.1) -> np.ndarray:
+    """Linear resampling onto another time base (handles different frame rates).
+
+    NaN outside the source range and wherever the bracketing valid source samples are more than
+    ``max_gap_s`` apart, so tracking dropouts are never bridged with invented values.
+    """
     y_src = np.asarray(y_src, float)
     out = np.full(t_dst.shape + y_src.shape[1:], np.nan)
     flat_src = y_src.reshape(len(t_src), -1)
@@ -153,5 +157,10 @@ def resample_to(t_src: np.ndarray, y_src: np.ndarray, t_dst: np.ndarray) -> np.n
         v = flat_src[:, j]
         ok = ~np.isnan(v)
         if ok.sum() >= 2:
-            flat_out[:, j] = np.interp(t_dst, t_src[ok], v[ok], left=np.nan, right=np.nan)
+            ts = t_src[ok]
+            y = np.interp(t_dst, ts, v[ok], left=np.nan, right=np.nan)
+            k = np.clip(np.searchsorted(ts, t_dst), 1, len(ts) - 1)
+            gap = ts[k] - ts[k - 1]
+            y[gap > max_gap_s + 1e-9] = np.nan
+            flat_out[:, j] = y
     return flat_out.reshape(out.shape)

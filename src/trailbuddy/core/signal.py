@@ -37,8 +37,9 @@ def lowpass(y: np.ndarray, fs: float, cutoff: float, order: int = 2) -> np.ndarr
     """Zero-lag (forward-backward) Butterworth low-pass filter.
 
     A 2nd-order filter applied forward and backward gives an effective 4th-order,
-    zero-phase response (Winter, 2009). NaN segments are filtered piecewise; segments
-    too short to filter are returned unfiltered.
+    zero-phase response (Winter, 2009). NaN segments are filtered piecewise; valid runs too
+    short to filter (<= 3*filter order samples) are set to NaN rather than left unfiltered,
+    because they would otherwise be differentiated raw.
     """
     y = np.asarray(y, dtype=float)
     out = y.copy()
@@ -53,6 +54,8 @@ def lowpass(y: np.ndarray, fs: float, cutoff: float, order: int = 2) -> np.ndarr
         seg = y[start:stop]
         if len(seg) > padlen:
             out[start:stop] = filtfilt(b, a, seg)
+        else:
+            out[start:stop] = np.nan
     return out
 
 

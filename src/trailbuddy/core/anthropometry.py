@@ -18,7 +18,11 @@ class SegmentParams:
 
 
 WINTER = {
-    "foot": SegmentParams(0.0145, 0.50, 0.475),
+    "foot": SegmentParams(0.0145, 0.50, 0.475),       # Winter: lateral malleolus -> MT2 head
+    # COM location and radius of gyration from de Leva (1996, male) for heel -> toe tip, which
+    # matches MediaPipe's heel/foot_index landmarks; mass fraction kept at Winter's 0.0145 so the
+    # whole-body mass fractions still sum to 1.
+    "foot_heel_toe": SegmentParams(0.0145, 0.4415, 0.257),
     "shank": SegmentParams(0.0465, 0.433, 0.302),
     "thigh": SegmentParams(0.100, 0.433, 0.323),
     "upper_arm": SegmentParams(0.028, 0.436, 0.322),

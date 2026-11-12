@@ -44,7 +44,7 @@ def test_newton_euler_static_equals_hand_calc():
     m_shank = segment_mass("shank", m_body)
     m_foot = segment_mass("foot", m_body)
     x_shank_com = 0.1 + 0.433 * (0.0 - 0.1)    # knee -> ankle
-    x_foot_com = 0.0 + 0.5 * (0.15 - 0.0)       # ankle -> toe
+    x_foot_com = -0.05 + 0.4415 * (0.15 - (-0.05))  # heel -> toe (de Leva COM location)
     expected = 35.0 - m_shank * G * (0.1 - x_shank_com) - m_foot * G * (0.1 - x_foot_com)
     mid = slice(5, -5)
     assert leg.knee_extensor[mid] == pytest.approx(np.full(40, expected), abs=1e-6)

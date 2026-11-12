@@ -30,10 +30,13 @@ jobs:
         run: uv run pyinstaller packaging/trailbuddy.spec --noconfirm
       - name: Smoke test built app (macOS)
         if: runner.os == 'macOS'
-        run: "dist/TrailBuddy Analyzer.app/Contents/MacOS/TrailBuddy Analyzer" --check-pose
+        run: |
+          "dist/TrailBuddy Analyzer.app/Contents/MacOS/TrailBuddy Analyzer" --check-pose
       - name: Smoke test built app (Windows)
         if: runner.os == 'Windows'
-        run: & "dist/TrailBuddy Analyzer/TrailBuddy Analyzer.exe" --check-pose | Out-Host
+        shell: pwsh
+        run: |
+          & "dist/TrailBuddy Analyzer/TrailBuddy Analyzer.exe" --check-pose | Out-Host
       - name: Zip (macOS)
         if: runner.os == 'macOS'
         run: cd dist && ditto -c -k --keepParent "TrailBuddy Analyzer.app" ../${{ matrix.artifact }}.zip

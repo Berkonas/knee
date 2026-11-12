@@ -50,9 +50,27 @@ def _ang_acc(prox: np.ndarray, dist: np.ndarray, dt: float) -> np.ndarray:
 # Whole-body centre of mass and total external force (Newton's 2nd law on the whole body)
 # --------------------------------------------------------------------------------------------
 
+def _fill_far_side(P: dict) -> dict:
+    """Copy of the point dict where a missing (NaN) landmark on one side is replaced by the same
+    landmark on the other side. In a side view the far limbs are often occluded; in the sagittal
+    projection the two limbs' segment COMs are close, so this is a reasonable approximation for the
+    whole-body COM (it would be wrong for asymmetric segment poses and is flagged by the caller)."""
+    Q = dict(P)
+    for nm in ("shoulder", "elbow", "wrist", "hip", "knee", "ankle", "heel", "foot_index"):
+        a, b = P.get(f"left_{nm}"), P.get(f"right_{nm}")
+        if a is None or b is None:
+            continue
+        Q[f"left_{nm}"] = np.where(np.isnan(a), b, a)
+        Q[f"right_{nm}"] = np.where(np.isnan(b), a, b)
+    return Q
+
+
 def whole_body_com(kin) -> np.ndarray:
-    """Whole-body COM (n, 2) from Winter segment masses and COM locations (lab frame)."""
-    P = kin.pts
+    """Whole-body COM (n, 2) from Winter segment masses and COM locations (lab frame).
+
+    Far-side landmarks that are missing are substituted by the near side (see _fill_far_side).
+    """
+    P = _fill_far_side(kin.pts)
     parts = []
 
     def along(prox, dist, frac):
@@ -69,7 +87,7 @@ def whole_body_com(kin) -> np.ndarray:
             (WINTER["forearm_hand"].mass_frac, along(g("elbow"), g("wrist"), WINTER["forearm_hand"].com_frac)),
             (WINTER["thigh"].mass_frac, along(g("hip"), g("knee"), WINTER["thigh"].com_frac)),
             (WINTER["shank"].mass_frac, along(g("knee"), g("ankle"), WINTER["shank"].com_frac)),
-            (WINTER["foot"].mass_frac, along(g("ankle"), g("foot_index"), WINTER["foot"].com_frac)),
+            (WINTER["foot"].mass_frac, along(g("heel"), g("foot_index"), WINTER["foot_heel_toe"].com_frac)),
         ]
     w = sum(m for m, _ in parts)
     return sum(m * p for m, p in parts) / w
@@ -141,6 +159,20 @@ class PoleLoad:
         return tot
 
 
+def grip_point(kin, side: str) -> np.ndarray:
+    """Pole grip ~ midway between wrist and index-finger knuckle (falls back to the wrist).
+
+    The pole passes through the fist, several cm beyond the wrist; using the wrist alone would
+    shorten the lever arm and underestimate arm moments.
+    """
+    wr = kin.get(side, "wrist")
+    ix = kin.pts.get(f"{side}_index")
+    if ix is None:
+        return wr
+    g = wr + 0.5 * (ix - wr)
+    return np.where(np.isnan(g), wr, g)
+
+
 def pole_direction(hand: np.ndarray, tip: np.ndarray | None, n: int) -> tuple[np.ndarray, bool]:
     """Unit vector from pole tip to hand; vertical if tip is unknown (flagged)."""
     if tip is None or np.all(np.isnan(tip)):
@@ -203,12 +235,14 @@ def inverse_dynamics_leg(kin, side: str, body_mass: float, grf: np.ndarray, cop:
     ankle, knee, hip = kin.get(side, "ankle"), kin.get(side, "knee"), kin.get(side, "hip")
     toe = kin.get(side, "foot_index")
 
-    def segment(name, prox, dist, F_d, M_d, r_d_point):
-        p = WINTER[name]
+    def segment(name, prox, dist, F_d, M_d, r_d_point, com_line=None):
+        # com_line: (a, b, param_name) - locate COM/inertia along a different landmark line
+        p = WINTER[name if com_line is None else com_line[2]]
         m = segment_mass(name, body_mass)
-        L = np.nanmedian(np.linalg.norm(dist - prox, axis=1))
+        a_pt, b_pt = (prox, dist) if com_line is None else (com_line[0], com_line[1])
+        L = np.nanmedian(np.linalg.norm(b_pt - a_pt, axis=1))
         I = m * (p.rgyr_frac * L) ** 2
-        com = prox + p.com_frac * (dist - prox)
+        com = a_pt + p.com_frac * (b_pt - a_pt)
         a = _acc(com, dt)
         alpha = _ang_acc(prox, dist, dt)
         F_p = m * a - m * g - F_d
@@ -218,7 +252,9 @@ def inverse_dynamics_leg(kin, side: str, body_mass: float, grf: np.ndarray, cop:
         return F_p, M_p
 
     grf = np.nan_to_num(grf)
-    F_a, M_a = segment("foot", ankle, toe, grf, np.zeros(len(grf)), np.where(np.isnan(cop), ankle, cop))
+    heel = kin.get(side, "heel")
+    F_a, M_a = segment("foot", ankle, toe, grf, np.zeros(len(grf)), np.where(np.isnan(cop), ankle, cop),
+                       com_line=(heel, toe, "foot_heel_toe"))
     F_k, M_k = segment("shank", knee, ankle, -F_a, -M_a, ankle)
     F_h, M_h = segment("thigh", hip, knee, -F_k, -M_k, knee)
     return LegDynamics(-M_a, M_k, -M_h, F_k)
@@ -275,7 +311,7 @@ def arm_moments(kin, side: str, body_mass: float, f_hand: np.ndarray,
     if kin.units != "m":
         raise ValueError("Arm moments require a metric scale.")
     sh, el, wr = kin.get(side, "shoulder"), kin.get(side, "elbow"), kin.get(side, "wrist")
-    hand = wr
+    hand = grip_point(kin, side)
     f_hand = np.nan_to_num(f_hand)
     m_el_ext = cross2(hand - el, f_hand)
     m_sh_ext = cross2(hand - sh, f_hand)

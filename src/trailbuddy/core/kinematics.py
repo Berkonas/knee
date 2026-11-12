@@ -96,6 +96,8 @@ def scale_from_height(pose: PoseSeries, height_m: float, side: str | None = None
     for s in (SIDES if side is None else (side,)):
         hip, knee, ank = pose.point(s, "hip"), pose.point(s, "knee"), pose.point(s, "ankle")
         lpx = np.linalg.norm(hip - knee, axis=1) + np.linalg.norm(knee - ank, axis=1)
+        ids = [idx(s, n) for n in ("hip", "knee", "ankle")]
+        lpx = np.where(pose.visibility[:, ids].min(axis=1) >= 0.5, lpx, np.nan)  # visibility gate
         vals.append(lpx)
     lpx = np.nanmedian(np.concatenate(vals))
     if not np.isfinite(lpx) or lpx <= 0:
@@ -139,8 +141,12 @@ def compute(pose: PoseSeries, scale_m_per_px: float | None = None, cutoff_hz: fl
         for nm in POINT_NAMES:
             pts[f"{s}_{nm}"] = lab[:, idx(s, nm), :]
     pts["head"] = lab[:, 0, :]  # nose landmark
-    pts["mid_hip"] = 0.5 * (pts["left_hip"] + pts["right_hip"])
-    pts["mid_shoulder"] = 0.5 * (pts["left_shoulder"] + pts["right_shoulder"])
+    # Midpoints use whichever side is available (the far side is often occluded in a side view).
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        pts["mid_hip"] = np.nanmean(np.stack([pts["left_hip"], pts["right_hip"]]), axis=0)
+        pts["mid_shoulder"] = np.nanmean(np.stack([pts["left_shoulder"], pts["right_shoulder"]]), axis=0)
 
     ang: dict[str, np.ndarray] = {}
     for s in SIDES:

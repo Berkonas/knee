@@ -48,7 +48,8 @@ def contact_intervals(t: np.ndarray, pos: np.ndarray, rel_threshold: float = 0.1
     edges = np.flatnonzero(np.diff(np.concatenate(([0], still.astype(int), [0]))))
     for a, b in zip(edges[::2], edges[1::2]):
         if t[b - 1] - t[a] >= min_duration:
-            out.append(ContactInterval(float(t[a]), float(t[b - 1]), int(a), int(b - 1)))
+            # end_s marks the end of the last stationary frame (duration = n_frames / fs)
+            out.append(ContactInterval(float(t[a]), float(t[b - 1] + dt), int(a), int(b - 1)))
     return out
 
 
@@ -59,14 +60,18 @@ def foot_point(kin, side: str) -> np.ndarray:
 @dataclass
 class GaitEvents:
     contacts: dict[str, list[ContactInterval]]  # 'left'/'right' -> stance intervals
+    n_frames: int | None = None  # used to exclude contacts truncated by the clip start
 
     def all_contacts_sorted(self) -> list[tuple[float, str]]:
         ev = [(c.start_s, s) for s, lst in self.contacts.items() for c in lst]
         return sorted(ev)
 
     def step_times(self) -> np.ndarray:
-        """Time between successive foot contacts of alternating feet."""
-        ev = self.all_contacts_sorted()
+        """Time between successive foot strikes of alternating feet.
+
+        Contacts already in progress at the first frame are not foot strikes and are excluded.
+        """
+        ev = sorted((c.start_s, s) for s, lst in self.contacts.items() for c in lst if c.start_i > 0)
         out = [b[0] - a[0] for a, b in zip(ev, ev[1:]) if a[1] != b[1]]
         return np.array(out)
 
@@ -77,14 +82,14 @@ class GaitEvents:
     def stance_durations(self, side: str, t_start: float, t_end: float) -> np.ndarray:
         """Stance durations excluding intervals truncated by the clip edges."""
         return np.array([c.duration for c in self.contacts.get(side, [])
-                         if c.start_s > t_start + 1e-9 and c.end_s < t_end - 1e-9])
+                         if c.start_i > 0 and (self.n_frames is None or c.end_i < self.n_frames - 1)])
 
 
 def detect_gait(kin, rel_threshold: float = 0.15, min_duration: float = 0.08) -> GaitEvents:
     contacts = {}
     for s in ("left", "right"):
         contacts[s] = contact_intervals(kin.t, foot_point(kin, s), rel_threshold, None, min_duration)
-    return GaitEvents(contacts)
+    return GaitEvents(contacts, len(kin.t))
 
 
 def stance_mask(t: np.ndarray, intervals: list[ContactInterval]) -> np.ndarray:

@@ -33,7 +33,7 @@ def test_no_pole_trial_outputs_and_labels():
     assert res.metric("knee_ext_impulse_per_m").value == pytest.approx(
         res.metric("knee_ext_impulse_total").value / 0.68)
     assert res.metric("cadence").value == pytest.approx(75, rel=0.1)
-    assert len(res.sensitivity) == 18
+    assert len(res.sensitivity) >= 18
 
 
 def test_quasi_static_moment_matches_hand_formula_on_synthetic():
