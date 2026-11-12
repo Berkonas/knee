@@ -1,0 +1,20 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+*.egg-info/
+.DS_Store
+.serena/
+# Downloaded pose model (fetched by scripts/setup)
+models/*.task
+# Participant data and outputs are never committed
+data/
+projects/
+*.mp4
+*.mov
+*.MOV
+*.avi
+!tests/data/*.mp4

@@ -1,0 +1,40 @@
+[project]
+name = "trailbuddy-analyzer"
+version = "1.0.0"
+description = "Video-based biomechanics analysis of stair/downhill descent with and without trekking poles (TrailBuddy class project)."
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+license = { text = "MIT" }
+dependencies = [
+    "numpy>=1.26,<3",
+    "scipy>=1.11",
+    "pandas>=2.1",
+    "matplotlib>=3.8",
+    "opencv-contrib-python>=4.9",
+    "mediapipe>=0.10.14",
+    "PySide6>=6.6",
+    "imageio-ffmpeg>=0.5",
+    "openpyxl>=3.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-qt>=4.4", "ruff>=0.5"]
+build = ["pyinstaller>=6.6"]
+
+[project.scripts]
+trailbuddy = "trailbuddy.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/trailbuddy"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
