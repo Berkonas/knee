@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from scipy.signal import butter, correlate, sosfiltfilt
+from scipy.signal import butter, sosfiltfilt
 
 HOP_S = 0.0025
 CONF_MIN = 3.0  # empirically: pure noise ~1-2, clear clap >> 5

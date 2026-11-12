@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from trailbuddy.core import pole, triangulation as dlt, video
+from trailbuddy.core import pole, triangulation as dlt
 from trailbuddy.core.project import Condition, Participant, Project, Trial, parse_filename
 from trailbuddy.core.synthetic import render_frames, synthetic_descent
 

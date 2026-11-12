@@ -16,7 +16,7 @@ import pandas as pd
 from . import dynamics as dyn
 from . import kinematics as kmod
 from .anthropometry import G
-from .events import GaitEvents, detect_gait, stance_mask
+from .events import detect_gait, stance_mask
 from .forces import ForceData
 from .landmarks import PoseSeries
 from .metrics import KINDS, MetricValue
