@@ -16,6 +16,30 @@ from .single_page import SinglePage
 from .state import AppState
 from .two_page import TwoPage
 
+class Sidebar(QWidget):
+    """Deep spruce sidebar with faint topographic contour lines: the app's quiet signature."""
+
+    def paintEvent(self, _):
+        import math
+
+        from PySide6.QtCore import QPointF
+        from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.fillRect(self.rect(), QColor("#17302D"))
+        w, h = self.width(), self.height()
+        p.setPen(QPen(QColor(255, 255, 255, 16), 1.2))
+        for k in range(9):
+            path = QPainterPath()
+            y0 = h * 0.55 + k * 26
+            for i, x in enumerate(range(-10, w + 12, 8)):
+                y = y0 + 14 * math.sin(x / w * 2.2 * math.pi + k * 0.55) - 0.25 * x
+                pt = QPointF(x, y)
+                path.moveTo(pt) if i == 0 else path.lineTo(pt)
+            p.drawPath(path)
+        p.end()
+
+
 PAGES = [("Study", "project"), ("One camera", "single"), ("Two cameras", "two"), ("Results", "results"),
          ("Methods", "methods")]
 
@@ -34,7 +58,7 @@ class MainWindow(QMainWindow):
         h = QHBoxLayout(central)
         h.setContentsMargins(0, 0, 0, 0)
         h.setSpacing(0)
-        side = QWidget()
+        side = Sidebar()
         side.setObjectName("sidebar")
         side.setFixedWidth(196)
         sl = QVBoxLayout(side)
@@ -90,6 +114,9 @@ class MainWindow(QMainWindow):
     def _project_changed(self):
         p = self.state.project
         self.project_badge.setText(f"Study: {p.name}" if p else "No study open")
+        if p:
+            self.statusBar().showMessage(f"Opened {p.name}: {len(p.trials)} trials, "
+                                         f"{sum(t.status == 'analysed' for t in p.trials)} analysed", 8000)
 
     def _open_trial(self, tid: str, page: str):
         self.nav.setCurrentRow([k for _, k in PAGES].index(page))

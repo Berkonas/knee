@@ -4,13 +4,11 @@ from __future__ import annotations
 
 import numpy as np
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QHBoxLayout, QHeaderView, QPlainTextEdit, QPushButton, QTableWidget,
-                               QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import QHeaderView, QTableWidget, QTableWidgetItem
 
 from ..core import plots
 from ..core.metrics import INFO, KINDS
 from .theme import EVIDENCE_COLORS
-from .widgets import MplCanvas
 
 
 def fmt(v, digits=3):
@@ -65,51 +63,8 @@ class MetricTable(QTableWidget):
                 self.setItem(r, c, it)
 
 
-class ResultView(QWidget):
-    def __init__(self):
-        super().__init__()
-        self.result = None
-        self.tabs = QTabWidget()
-        self.table = MetricTable()
-        self.tabs.addTab(self.table, "Summary")
-        self.canvases = {}
-        for key, title in (("kin", "Joint angles"), ("knee", "Knee load"), ("events", "Events"),
-                           ("sens", "Sensitivity"), ("cams", "Camera comparison")):
-            c = MplCanvas()
-            self.canvases[key] = c
-            self.tabs.addTab(c, title)
-        self.notes = QPlainTextEdit()
-        self.notes.setReadOnly(True)
-        self.tabs.addTab(self.notes, "Methods notes")
-        self.btn_save_fig = QPushButton("Save figure…")
-        self.btn_save_fig.setToolTip("Save the figure in the current tab as PNG, SVG or PDF")
-        self.btn_save_fig.clicked.connect(self._save_fig)
-        self.btn_save_fig.setEnabled(False)
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.addWidget(self.tabs)
-        row = QHBoxLayout()
-        row.addStretch(1)
-        row.addWidget(self.btn_save_fig)
-        lay.addLayout(row)
-        self.tabs.currentChanged.connect(lambda i: self.btn_save_fig.setEnabled(
-            self.result is not None and isinstance(self.tabs.widget(i), MplCanvas)))
-
-    def show_result(self, res, title: str = ""):
-        self.result = res
-        self.table.show_metrics(res.metrics)
-        self.canvases["kin"].set_figure(plots.fig_kinematics(res, f"{title}: joint angles (2D)" if title else ""))
-        self.canvases["knee"].set_figure(plots.fig_knee_load(res, f"{title}: knee angle and load" if title else ""))
-        self.canvases["events"].set_figure(plots.fig_events(res))
-        self.canvases["sens"].set_figure(plots.fig_sensitivity(res))
-        self.canvases["cams"].set_figure(self._fig_cams(res))
-        q = res.quality
-        qtxt = "\n".join(f"  {k}: {v:.3g}" if isinstance(v, float) else f"  {k}: {v}" for k, v in q.items())
-        self.notes.setPlainText("Analysis notes\n" + "\n".join(f"• {n}" for n in res.notes) +
-                                "\n\nTracking quality\n" + qtxt)
-        self.btn_save_fig.setEnabled(isinstance(self.tabs.currentWidget(), MplCanvas))
-
-    def _fig_cams(self, res):
+def camera_figure(res):
+    if True:  # noqa: SIM108
         ts = res.timeseries
         fig, ax = plots._fig(6.5, 3.2)
         s = res.side
@@ -129,7 +84,3 @@ class ResultView(QWidget):
         ax.legend(frameon=False)
         return fig
 
-    def _save_fig(self):
-        w = self.tabs.currentWidget()
-        if isinstance(w, MplCanvas):
-            w.save_dialog(self, f"{self.tabs.tabText(self.tabs.currentIndex()).lower().replace(' ', '_')}.png")

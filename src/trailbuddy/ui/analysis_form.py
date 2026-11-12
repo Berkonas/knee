@@ -1,10 +1,13 @@
-"""Shared analysis settings form (scale, side, model, stairs, forces, poles)."""
+"""Analysis settings, split into the setup steps (scale, stairs, forces, advanced).
+
+Each step is a plain widget (no group boxes) so it can be placed in the step accordion.
+"""
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QCheckBox, QToolButton, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox,
-                               QHBoxLayout, QLabel, QPushButton, QSpinBox, QVBoxLayout, QWidget)
+from PySide6.QtCore import QObject, Signal
+from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel,
+                               QPushButton, QSpinBox, QVBoxLayout, QWidget)
 
 from ..core.analysis import MOMENT_ARM_NOMINAL_M, AnalysisSettings
 
@@ -21,121 +24,151 @@ def dspin(lo, hi, val, step=0.01, dec=2, suffix="", tip=""):
     return s
 
 
-class AnalysisForm(QWidget):
+def hint(text: str) -> QLabel:
+    lab = QLabel(text)
+    lab.setObjectName("muted")
+    lab.setWordWrap(True)
+    return lab
+
+
+def form(parent: QWidget) -> QFormLayout:
+    f = QFormLayout(parent)
+    f.setContentsMargins(0, 0, 0, 0)
+    f.setHorizontalSpacing(10)
+    f.setVerticalSpacing(8)
+    f.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+    return f
+
+
+class AnalysisForm(QObject):
+    """Holds all settings widgets; exposes four section widgets for the accordion."""
+
     pickScaleToggled = Signal(bool)
     forceFileChanged = Signal(str)
+    changed = Signal()
 
     def __init__(self):
         super().__init__()
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
-
-        g = QGroupBox("Scale and side")
-        f = QFormLayout(g)
+        # ---- scale & side ---------------------------------------------------------------------
+        self.scale_box = QWidget()
+        v = QVBoxLayout(self.scale_box)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.addWidget(hint("Metres per pixel are needed for speed and every force or moment. Best: click two points "
+                         "on something you measured in the plane of motion, such as a stair riser."))
+        fw = QWidget()
+        f = form(fw)
         self.scale_method = QComboBox()
         self.scale_method.addItem("Measured distance in the scene (best)", "points")
-        self.scale_method.addItem("Participant height (approximate)", "height")
+        self.scale_method.addItem("Participant body metrics (approximate)", "height")
         self.scale_method.addItem("None (angles and timing only)", "none")
         self.scale_method.setCurrentIndex(1)
-        self.scale_method.setToolTip("Metres-per-pixel is needed for speed and every force/moment estimate.")
-        f.addRow("Scale", self.scale_method)
+        f.addRow("Method", self.scale_method)
         row = QHBoxLayout()
         self.btn_pick_scale = QPushButton("Pick 2 points")
         self.btn_pick_scale.setCheckable(True)
-        self.btn_pick_scale.setToolTip("Click two points on the video whose real distance you measured "
-                                       "(e.g. top and bottom of a stair riser, or ends of a metre stick).")
+        self.btn_pick_scale.setToolTip("Then click the two ends of the measured distance on the video.")
         self.btn_pick_scale.toggled.connect(self.pickScaleToggled)
         self.scale_dist = dspin(0.01, 10, 0.17, 0.01, 3, " m", "Real distance between the two points")
-        self.scale_dist.setMinimumWidth(90)
+        self.scale_dist.setMinimumWidth(96)
         row.addWidget(self.btn_pick_scale, 1)
         row.addWidget(self.scale_dist)
-        f.addRow("Calibration", row)
+        f.addRow("Distance", row)
         self.scale_label = QLabel("No points picked")
         self.scale_label.setObjectName("muted")
         f.addRow("", self.scale_label)
         self.scale_points: list[tuple[float, float]] = []
-        self.side_row_holder = f
         self.side = QComboBox()
-        for lab, v in (("Automatic (side facing camera)", "auto"), ("Left leg/arm", "left"), ("Right leg/arm", "right")):
-            self.side.addItem(lab, v)
+        for lab, val in (("Automatic (side facing the camera)", "auto"), ("Left leg and arm", "left"),
+                         ("Right leg and arm", "right")):
+            self.side.addItem(lab, val)
         f.addRow("Analysed side", self.side)
-        self.model = QComboBox()
-        for lab, v in (("Full (recommended)", "full"), ("Heavy (slower, most accurate)", "heavy"), ("Lite (fast)", "lite")):
-            self.model.addItem(lab, v)
-        self.model.setToolTip("MediaPipe Pose Landmarker model size.")
-        self.cutoff = dspin(1, 30, 6, 0.5, 1, " Hz", "Low-pass cut-off for landmark trajectories (Winter: ~6 Hz for walking).")
-        lay.addWidget(g)
+        v.addWidget(fw)
 
-        g = QGroupBox("Stairs")
-        f = QFormLayout(g)
+        # ---- stairs ---------------------------------------------------------------------------
+        self.stairs_box = QWidget()
+        v = QVBoxLayout(self.stairs_box)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.addWidget(hint("Used to express knee demand per metre descended. Leave steps at 0 if unknown."))
+        fw = QWidget()
+        f = form(fw)
         self.step_h = dspin(0, 0.5, 0.17, 0.005, 3, " m", "Riser height")
         self.n_steps = QSpinBox()
         self.n_steps.setRange(0, 50)
-        self.n_steps.setValue(0)
-        self.n_steps.setToolTip("Number of steps descended within the analysis interval (0 = unknown).")
+        self.n_steps.setToolTip("Number of steps descended within the analysis interval")
         f.addRow("Step height", self.step_h)
-        f.addRow("Steps in interval", self.n_steps)
-        lay.addWidget(g)
+        f.addRow("Steps in clip", self.n_steps)
+        v.addWidget(fw)
 
-        g = QGroupBox("External forces")
-        fp = QFormLayout(g)
-        lay.addWidget(g)
-        self.btn_adv = QToolButton()
-        self.btn_adv.setText("Show advanced settings")
-        self.btn_adv.setCheckable(True)
-        self.btn_adv.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        self.btn_adv.setArrowType(Qt.ArrowType.RightArrow)
-        self.btn_adv.setStyleSheet("QToolButton { border: none; color: #1F6F66; padding: 6px 0; }")
-        lay.addWidget(self.btn_adv)
-        self.adv = QGroupBox("Advanced")
-        f = QFormLayout(self.adv)
-        f.addRow("Pose model", self.model)
-        f.addRow("Filter cut-off", self.cutoff)
-        self.support = QComboBox()
-        self.support.addItem("Body weight (quasi-static)", "static")
-        self.support.addItem("Body weight + COM acceleration (dynamic)", "dynamic")
-        self.support.setToolTip("Total support force used when no force plate data are imported.")
-        f.addRow("Support force", self.support)
-        self.cop = dspin(0, 1, 0.5, 0.05, 2, "", "Assumed centre of pressure along the foot: 0 = heel, 1 = toes.")
-        f.addRow("Centre of pressure", self.cop)
-        self.moment_arm = dspin(2, 8, 100 * MOMENT_ARM_NOMINAL_M, 0.1, 1, " cm",
-                                "Patellar tendon moment arm (literature ~4–6 cm). Range 4–6 cm is always reported.")
-        f.addRow("Knee extensor moment arm", self.moment_arm)
+        # ---- forces ---------------------------------------------------------------------------
+        self.forces_box = QWidget()
+        v = QVBoxLayout(self.forces_box)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.addWidget(hint("Video shows movement, not force. Without a force plate the app uses body weight; pole "
+                         "force must be assumed (scenario) or measured with a load cell."))
+        fw = QWidget()
+        f = form(fw)
         self.pole_mode = QComboBox()
         self.pole_mode.addItem("Not modelled", "none")
         self.pole_mode.addItem("Scenario: assumed pole force", "scenario")
         self.pole_mode.addItem("Measured (load-cell CSV)", "measured")
-        self.pole_mode.setToolTip("Pole force cannot be seen in video. Choose an explicit assumption or import data.")
-        fp.addRow("Pole force", self.pole_mode)
-        self.pole_pct = dspin(0, 50, 10, 1, 1, " % BW", "Axial force per planted pole as % of body weight (scenario).")
-        fp.addRow("Assumed force", self.pole_pct)
+        f.addRow("Pole force", self.pole_mode)
+        self.pole_pct = dspin(0, 50, 10, 1, 1, " % BW", "Axial force per planted pole, % of body weight")
+        f.addRow("Assumed force", self.pole_pct)
         row = QHBoxLayout()
         self.btn_force = QPushButton("Import force CSV…")
-        self.btn_force.setToolTip("Force plate / instrumented step / pole load cell. See docs/data-formats.md.")
+        self.btn_force.setToolTip("Force plate, instrumented step or pole load cell (see docs/data-formats.md)")
         self.btn_force.clicked.connect(self._pick_force)
         self.btn_force_clear = QPushButton("Clear")
         self.btn_force_clear.clicked.connect(lambda: self.set_force_file(""))
-        row.addWidget(self.btn_force)
+        row.addWidget(self.btn_force, 1)
         row.addWidget(self.btn_force_clear)
-        fp.addRow("Force data", row)
-        self.force_label = QLabel("None (video-only)")
+        f.addRow("Force data", row)
+        self.force_label = QLabel("None: video-only analysis")
         self.force_label.setObjectName("muted")
         self.force_label.setWordWrap(True)
-        fp.addRow("", self.force_label)
+        f.addRow("", self.force_label)
+        v.addWidget(fw)
+
+        # ---- advanced -------------------------------------------------------------------------
+        self.adv_box = QWidget()
+        v = QVBoxLayout(self.adv_box)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.addWidget(hint("Defaults follow the methods document. Every trial also reports a sensitivity range."))
+        fw = QWidget()
+        f = form(fw)
+        self.model = QComboBox()
+        for lab, val in (("Full (recommended)", "full"), ("Heavy (slower, most accurate)", "heavy"),
+                         ("Lite (fastest)", "lite")):
+            self.model.addItem(lab, val)
+        f.addRow("Pose model", self.model)
+        self.cutoff = dspin(1, 30, 6, 0.5, 1, " Hz", "Low-pass cut-off for landmark trajectories (Winter: ~6 Hz)")
+        f.addRow("Filter cut-off", self.cutoff)
+        self.support = QComboBox()
+        self.support.addItem("Body weight (quasi-static)", "static")
+        self.support.addItem("Weight + COM acceleration", "dynamic")
+        f.addRow("Support force", self.support)
+        self.cop = dspin(0, 1, 0.5, 0.05, 2, "", "Assumed centre of pressure: 0 = heel, 1 = toes")
+        f.addRow("Centre of pressure", self.cop)
+        self.moment_arm = dspin(2, 8, 100 * MOMENT_ARM_NOMINAL_M, 0.1, 1, " cm",
+                                "Patellar tendon moment arm (literature 4-6 cm)")
+        f.addRow("Knee moment arm", self.moment_arm)
         self.force_offset = dspin(-600, 600, 0, 0.001, 3, " s", "t_video = t_force + offset")
         f.addRow("Force time offset", self.force_offset)
-        lay.addWidget(self.adv)
-        self.adv.setVisible(False)
-        self.btn_adv.toggled.connect(self._toggle_adv)
+        v.addWidget(fw)
+
         self.force_file = ""
         self.pole_mode.currentIndexChanged.connect(self._sync_enabled)
         self.scale_method.currentIndexChanged.connect(self._sync_enabled)
+        for w in (self.scale_method, self.side, self.pole_mode, self.support, self.model):
+            w.currentIndexChanged.connect(lambda *_: self.changed.emit())
+        for w in (self.scale_dist, self.step_h, self.pole_pct, self.cutoff, self.cop, self.moment_arm):
+            w.valueChanged.connect(lambda *_: self.changed.emit())
+        self.n_steps.valueChanged.connect(lambda *_: self.changed.emit())
         self._sync_enabled()
 
-    def _toggle_adv(self, on):
-        self.adv.setVisible(on)
-        self.btn_adv.setText("Hide advanced settings" if on else "Show advanced settings")
-        self.btn_adv.setArrowType(Qt.ArrowType.DownArrow if on else Qt.ArrowType.RightArrow)
+    def setEnabled(self, on: bool):
+        for w in (self.scale_box, self.stairs_box, self.forces_box, self.adv_box):
+            w.setEnabled(on)
 
     def _sync_enabled(self):
         self.pole_pct.setEnabled(self.pole_mode.currentData() == "scenario")
@@ -144,31 +177,33 @@ class AnalysisForm(QWidget):
         self.scale_dist.setEnabled(pts)
 
     def _pick_force(self):
-        p, _ = QFileDialog.getOpenFileName(self, "Import force data", "", "CSV files (*.csv)")
+        p, _ = QFileDialog.getOpenFileName(None, "Import force data", "", "CSV files (*.csv)")
         if p:
             from ..core.forces import load_force_csv
             try:
                 fd = load_force_csv(p)
             except Exception as e:
                 from .widgets import error_box
-                error_box(self, "Cannot read force file", str(e))
+                error_box(None, "Cannot read force file", str(e))
                 return
             self.set_force_file(p, ", ".join(fd.channels))
 
     def set_force_file(self, path: str, channels: str = ""):
+        from pathlib import Path
         self.force_file = path
-        self.force_label.setText(f"{path}\nChannels: {channels}" if path else "None (video-only)")
+        self.force_label.setText(f"{Path(path).name} ({channels})" if path else "None: video-only analysis")
         self.forceFileChanged.emit(path)
+        self.changed.emit()
 
     def add_scale_point(self, x: float, y: float) -> bool:
         self.scale_points.append((x, y))
         if len(self.scale_points) > 2:
             self.scale_points = self.scale_points[-1:]
         if len(self.scale_points) == 2:
-            from ..core.kinematics import scale_from_points
-            s = scale_from_points(*self.scale_points, self.scale_dist.value())
-            self.scale_label.setText(f"{1 / s:.1f} px per metre ({1000 * s:.2f} mm/px)")
+            s = self.scale_m_per_px()
+            self.scale_label.setText(f"{1 / s:.0f} px per metre ({1000 * s:.2f} mm per px)")
             self.btn_pick_scale.setChecked(False)
+            self.changed.emit()
             return True
         self.scale_label.setText("Point 1 set; click point 2")
         return False
@@ -178,6 +213,31 @@ class AnalysisForm(QWidget):
             from ..core.kinematics import scale_from_points
             return scale_from_points(*self.scale_points, self.scale_dist.value())
         return None
+
+    # ---- summaries for the step headers -------------------------------------------------------
+    def scale_summary(self) -> tuple[str, bool]:
+        m = self.scale_method.currentData()
+        side = self.side.currentText().split(" (")[0]
+        if m == "points":
+            s = self.scale_m_per_px()
+            return (f"{1 / s:.0f} px/m from 2 points · {side}" if s else "Pick 2 points on the video", bool(s))
+        if m == "height":
+            return (f"From body metrics (approximate) · {side}", True)
+        return ("No scale: angles and timing only", True)
+
+    def stairs_summary(self) -> tuple[str, bool]:
+        n = self.n_steps.value()
+        return (f"{n} × {100 * self.step_h.value():.1f} cm = {n * self.step_h.value():.2f} m" if n
+                else "Steps not counted (optional)", bool(n))
+
+    def forces_summary(self) -> tuple[str, bool]:
+        mode = self.pole_mode.currentData()
+        txt = {"none": "Body weight only; pole force not modelled",
+               "scenario": f"Scenario: {self.pole_pct.value():g}% BW per planted pole",
+               "measured": "Measured pole force from CSV"}[mode]
+        if self.force_file:
+            txt += " · force data loaded"
+        return txt, True
 
     def settings(self) -> AnalysisSettings:
         method = self.scale_method.currentData()
@@ -215,7 +275,7 @@ class AnalysisForm(QWidget):
         if "scale_distance_m" in s:
             self.scale_dist.setValue(s["scale_distance_m"])
         if len(self.scale_points) == 2:
-            self.scale_label.setText(f"{1 / self.scale_m_per_px():.1f} px per metre (saved)")
+            self.scale_label.setText(f"{1 / self.scale_m_per_px():.0f} px per metre (saved)")
         else:
             self.scale_label.setText("No points picked")
         self.set_force_file(s.get("force_csv", ""))
@@ -228,6 +288,3 @@ class AnalysisForm(QWidget):
         trial.settings["force_csv"] = self.force_file
         trial.settings["pose_model"] = self.model.currentData()
         trial.stair.update(self.stair())
-
-
-__all__ = ["AnalysisForm", "QCheckBox"]

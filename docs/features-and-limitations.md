@@ -31,6 +31,18 @@ measurements before we can claim it is accurate.
 | Standalone macOS build (PyInstaller) | Built and smoke-tested on macOS (arm64) | `--selftest`, `--check-pose` |
 | Windows install script and standalone build | **Windows is tested only in CI** (GitHub Actions `windows-latest`) | see the Actions tab |
 
+## Added in v1.1 (second design pass)
+
+| Feature | Status |
+|---|---|
+| Step-by-step setup panel with a live status for each step | Tested (GUI tests) |
+| Clickable knee timeline under the video (jumps the video) | Tested |
+| Trial report: metric cards with evidence labels and published reference bands | Tested |
+| Movement timeline figure (angles, contacts, knee moment, cumulative demand) and leg stick-figure strip | Tested |
+| New metrics: knee angle at landing, peak loaded knee flexion velocity, hip and ankle peaks, step-time CV, knee impulse per step, peak knee power absorption | Tested on synthetic data |
+| All-metric overview with a per-person noise check; pole-length response; repetition trends | Tested |
+| Export: change table, reference ranges, per-trial timeline and leg figures, raw-data folder | Tested |
+
 ## Not implemented / not estimated
 
 * **Tibiofemoral and patellofemoral compression.** These need a musculoskeletal model with co-contraction and
@@ -38,7 +50,9 @@ measurements before we can claim it is accurate.
 * **Pole force from video.** It is physically impossible to see. Use a load cell or a scenario.
 * **Automatic pole detection without markers.** The `PoleDetector` interface is ready for a detector trained on our
   own recordings later.
-* **Muscle fatigue scores.** Deliberately not implemented. The app reports mechanical-demand metrics instead.
+* **Muscle fatigue scores.** Deliberately not implemented, because no published model is defensible for 2D video
+  without strength testing or EMG (methods §12). The app reports mechanical-demand metrics and repetition trends
+  instead.
 * **OpenCap / OpenSim integration.** Evaluated, not integrated in v1 (see `docs/research/open-source-tools.md`).
 * **Signed and notarised macOS app / Windows installer.** The builds are unsigned (see troubleshooting).
 

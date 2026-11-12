@@ -107,3 +107,50 @@ def load_all_results(project) -> dict[str, TrialResult]:
             except Exception:  # corrupted output: skip, the UI reports status
                 continue
     return out
+
+
+OVERVIEW_METRICS = ["quad_force_peak", "knee_ext_moment_peak", "knee_ext_impulse_per_step", "knee_neg_work",
+                    "knee_power_absorption_peak",
+                    "knee_flexion_peak", "knee_flexion_at_contact", "knee_flexion_velocity_peak", "hip_flexion_peak",
+                    "ankle_dorsiflexion_peak", "trunk_lean_mean", "shoulder_flexion_peak", "elbow_flexion_mean",
+                    "shoulder_moment_peak", "elbow_moment_peak", "speed", "cadence", "stance_time_mean", "step_time_cv"]
+
+
+def change_table(long: pd.DataFrame, baseline: str = "C0", metrics: list[str] | None = None) -> pd.DataFrame:
+    """Within-participant change of every metric vs the baseline condition, with a noise check.
+
+    noise_95 = 1.96 * sqrt(sd_b^2/n_b + sd_c^2/n_c): approximate 95% limit of the difference of two trial means
+    given each participant's own trial-to-trial SD (typical error, Hopkins 2000; same logic as the minimal
+    detectable change, Weir 2005, applied to means of repeated trials). A change is 'clear' when
+    |difference| > noise_95, i.e. larger than the repetition noise. Says nothing about population effects (n = 3).
+    """
+    from .metrics import INFO
+
+    metrics = metrics or OVERVIEW_METRICS
+    rows = []
+    for m in metrics:
+        pp = per_participant(long, m)
+        if pp.empty:
+            continue
+        for pid, g in pp.groupby("participant"):
+            b = g[g.condition == baseline]
+            if b.empty:
+                continue
+            bm, bs, bn = float(b["mean"].iloc[0]), b["sd"].iloc[0], int(b["n"].iloc[0])
+            for r in g.itertuples():
+                if r.condition == baseline:
+                    continue
+                diff = r.mean - bm
+                if bn >= 2 and r.n >= 2 and np.isfinite(bs) and np.isfinite(r.sd):
+                    noise = 1.96 * np.sqrt(bs**2 / bn + r.sd**2 / r.n)
+                else:
+                    noise = np.nan
+                rows.append({"metric": m, "label": INFO[m].label, "unit": INFO[m].unit, "participant": pid,
+                             "condition": r.condition, "baseline": baseline, "baseline_mean": bm,
+                             "condition_mean": r.mean, "abs_diff": diff,
+                             "pct_diff": 100 * diff / abs(bm) if bm else np.nan,
+                             "noise_95": noise, "clear": bool(np.isfinite(noise) and abs(diff) > noise),
+                             "n_baseline": bn, "n_condition": int(r.n)})
+    return pd.DataFrame(rows, columns=["metric", "label", "unit", "participant", "condition", "baseline",
+                                       "baseline_mean", "condition_mean", "abs_diff", "pct_diff", "noise_95",
+                                       "clear", "n_baseline", "n_condition"])

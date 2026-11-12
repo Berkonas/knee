@@ -48,11 +48,14 @@ def test_demo_project_results_and_export(win, tmp_path, monkeypatch):
     win.state.set_project(build_demo_project(tmp_path / "demo"))
     rp = win.pages["results"]
     assert rp.btn_export.isEnabled()
-    assert rp.t_within.rowCount() == 3
-    for i in range(rp.metric.count()):
-        rp.metric.setCurrentIndex(i)  # every metric renders without error
+    assert rp.t_changes.rowCount() > 20  # overview: every metric x participant
+    for v in range(len(rp.view.buttons)):
+        rp.view.set_index(v)  # every view renders
+        for i in range(0, rp.metric.count(), 5):
+            rp.metric.setCurrentIndex(i)
+    rp.view.set_index(1)
     rp.metric.setCurrentIndex(rp.metric.findData("knee_ext_impulse_total"))
-    assert rp.t_group.rowCount() == 1
+    assert rp.t_changes.rowCount() == 3
     monkeypatch.setattr("trailbuddy.ui.results_page.QFileDialog.getExistingDirectory", lambda *a, **k: str(tmp_path / "exp"))
     (tmp_path / "exp").mkdir()
     rp.export()
@@ -177,8 +180,10 @@ def test_single_camera_full_run_with_injected_pose(win, tmp_path, qtbot, no_dial
     assert sp.results.table.rowCount() == len(res.metrics)
     assert pr.trial("P01_C1_T01").status == "analysed"
     assert (pr.trial_dir("P01_C1_T01") / "timeseries.csv").exists()
-    for i in range(sp.results.tabs.count()):
-        sp.results.tabs.setCurrentIndex(i)
+    assert sp.stack.currentIndex() == 1  # report shown after the run
+    assert sp.results._cards and sp.timeline.t is not None
+    sp.timeline.seek.emit(1.0)
+    assert sp.player.index == 30
     monkeypatch.setattr("trailbuddy.ui.single_page.QFileDialog.getSaveFileName",
                         lambda *a, **k: (str(tmp_path / "ov.mp4"), ""))
     sp._save_overlay()

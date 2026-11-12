@@ -11,7 +11,8 @@ from . import compare, plots
 from .metrics import INFO
 
 KEY_METRICS = ["quad_force_peak", "knee_ext_moment_peak", "knee_flexion_peak", "knee_ext_impulse_total",
-               "knee_neg_work", "shoulder_moment_peak", "elbow_moment_peak", "shoulder_flexion_peak",
+               "knee_ext_impulse_per_step", "knee_neg_work", "knee_power_absorption_peak", "knee_flexion_at_contact",
+               "knee_flexion_velocity_peak", "hip_flexion_peak", "shoulder_moment_peak", "elbow_moment_peak", "shoulder_flexion_peak",
                "trunk_lean_mean", "speed", "cadence"]
 
 LIMITATIONS = [
@@ -94,12 +95,45 @@ def export_project(project, out_dir: str | Path, baseline: str = "C0",
             plots.save(plots.fig_stance_normalised(by, ylabel, f"{ylabel.split(' (')[0]} over stance, by condition"),
                        figdir / f"stance_normalised_{name}", fig_formats)
 
+    # ---- new in v1.1: all-metric change table, overview, pole-length, repetitions, per-trial figures, raw data
+    from . import reference
+    changes = compare.change_table(long, baseline)
+    files["changes_csv"] = out / "changes_vs_baseline.csv"
+    changes.to_csv(files["changes_csv"], index=False, float_format="%.6g")
+    refs = pd.DataFrame([{"metric": k, "label": INFO[k].label, "low": r.low, "high": r.high, "unit": INFO[k].unit,
+                          "context": r.context, "source": r.source} for k, r in reference.RANGES.items()])
+    with pd.ExcelWriter(files["xlsx"], engine="openpyxl", mode="a") as xw:
+        changes.to_excel(xw, sheet_name="Changes vs baseline", index=False)
+        refs.to_excel(xw, sheet_name="Reference ranges", index=False)
+    plots.save(plots.fig_metric_overview(changes.dropna(subset=["pct_diff"])), figdir / "overview_all_metrics",
+               fig_formats)
+    offsets = {c.code: (c.pole_offset_cm if c.uses_poles else None) for c in project.conditions}
+    for m in ("quad_force_peak", "knee_ext_impulse_per_step", "knee_flexion_peak", "shoulder_moment_peak",
+              "elbow_flexion_mean"):
+        if (long.metric == m).any() and long[long.metric == m].value.notna().any():
+            plots.save(plots.fig_dose_response(long, m, offsets), figdir / f"pole_length_{m}", fig_formats)
+            plots.save(plots.fig_repetition(long, m), figdir / f"repetitions_{m}", fig_formats)
+    import shutil
+    raw = out / "raw_data"
+    for tid, res in results.items():
+        tdir = figdir / "trials" / tid
+        plots.save(plots.fig_timeline(res, tid), tdir / "timeline", ("png", "pdf"))
+        plots.save(plots.fig_stick_strip(res), tdir / "leg_motion", ("png", "pdf"))
+        src = project.root / "trials" / tid
+        (raw / tid).mkdir(parents=True, exist_ok=True)
+        for f in ("timeseries.csv", "events.csv", "summary.csv", "sensitivity.csv", "analysis.json", "pose_A.csv",
+                  "pose_B.csv"):
+            if (src / f).exists():
+                shutil.copy2(src / f, raw / tid / f)
+    files["raw_dir"] = raw
+
     files["summary_md"] = out / "analysis_summary.md"
-    files["summary_md"].write_text(summary_markdown(project, long, group, baseline))
+    files["summary_md"].write_text(summary_markdown(project, long, group, baseline, changes))
     return files
 
 
-def summary_markdown(project, long: pd.DataFrame, group: pd.DataFrame, baseline: str) -> str:
+def summary_markdown(project, long: pd.DataFrame, group: pd.DataFrame, baseline: str,
+                     changes: pd.DataFrame | None = None) -> str:
     n_tr = long.trial_id.nunique()
     lines = [f"# {project.name}: analysis summary", "",
              f"Analysed trials: {n_tr} of {len(project.trials)} logged ({project.planned_trials()} planned). "
@@ -119,9 +153,13 @@ def summary_markdown(project, long: pd.DataFrame, group: pd.DataFrame, baseline:
             lines.append(f"- **Evidence type:** {', '.join(ev)}")
         if g is not None and len(g):
             for r in g.itertuples():
+                clear = ""
+                if changes is not None and len(changes):
+                    cc = changes[(changes.metric == m) & (changes.condition == r.condition)]
+                    clear = f" Larger than trial-to-trial noise in {int(cc.clear.sum())} of {len(cc)}."
                 lines.append(f"- **{r.condition} vs {baseline}:** mean change {r.mean_pct_diff:+.1f}% "
                              f"(range {r.min_pct_diff:+.1f}% to {r.max_pct_diff:+.1f}%), lower in "
-                             f"{r.n_reduced} of {r.n_participants} participants.")
+                             f"{r.n_reduced} of {r.n_participants} participants.{clear}")
         else:
             lines.append("- No within-participant comparison available yet.")
         lines.append("")

@@ -86,7 +86,8 @@ class FrameView(QLabel):
 
     def __init__(self):
         super().__init__()
-        self.setMinimumSize(320, 200)
+        self.setMinimumSize(280, 180)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)  # never fights the layout
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setStyleSheet("background:#0F1B1A; border-radius:6px; color:#9FB9B4;")
         self.setText("No video loaded")
@@ -94,13 +95,13 @@ class FrameView(QLabel):
         self._rect = None
         self.click_enabled = False
 
-    def show_frame(self, bgr: np.ndarray) -> None:
+    def show_frame(self, bgr: np.ndarray, fast: bool = False) -> None:
         h, w = bgr.shape[:2]
         self._src_size = (w, h)
         rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
         img = QImage(rgb.data, w, h, 3 * w, QImage.Format.Format_RGB888).copy()
-        pm = QPixmap.fromImage(img).scaled(self.width(), self.height(), Qt.AspectRatioMode.KeepAspectRatio,
-                                           Qt.TransformationMode.SmoothTransformation)
+        mode = Qt.TransformationMode.FastTransformation if fast else Qt.TransformationMode.SmoothTransformation
+        pm = QPixmap.fromImage(img).scaled(self.width(), self.height(), Qt.AspectRatioMode.KeepAspectRatio, mode)
         self._rect = ((self.width() - pm.width()) / 2, (self.height() - pm.height()) / 2, pm.width(), pm.height())
         self.setPixmap(pm)
 
@@ -121,6 +122,7 @@ class VideoPlayer(QWidget):
 
     frameChanged = Signal(int)
     loaded = Signal()
+    rangeChanged = Signal()
 
     def __init__(self, label: str = ""):
         super().__init__()
@@ -160,6 +162,10 @@ class VideoPlayer(QWidget):
             b.setEnabled(False)
         self.timer = QTimer(self)
         self.timer.timeout.connect(lambda: self.seek(self.index + 1, from_timer=True))
+        self._resize_timer = QTimer(self)
+        self._resize_timer.setSingleShot(True)
+        self._resize_timer.setInterval(80)  # redraw once resizing pauses: keeps splitters smooth
+        self._resize_timer.timeout.connect(self.refresh)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         if label:
@@ -228,7 +234,7 @@ class VideoPlayer(QWidget):
         self.index = i
         if self.overlay is not None:
             frame = self.overlay(frame.copy(), i)
-        self.view.show_frame(frame)
+        self.view.show_frame(frame, fast=self.timer.isActive())
         self.slider.blockSignals(True)
         self.slider.setValue(i)
         self.slider.blockSignals(False)
@@ -272,13 +278,14 @@ class VideoPlayer(QWidget):
 
     def _update_range(self) -> None:
         iv = self.interval_s()
+        self.rangeChanged.emit()
         if iv:
             self.range_label.setText(f"Analysis interval: {iv[0]:.2f}–{iv[1]:.2f} s ({iv[1] - iv[0]:.2f} s)")
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
         if self.reader:
-            self.refresh()
+            self._resize_timer.start()
 
 
 class Worker(QObject):

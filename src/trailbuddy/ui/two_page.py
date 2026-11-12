@@ -4,37 +4,26 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtWidgets import (QCheckBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
-                               QLabel, QPushButton)
+from PySide6.QtWidgets import (QCheckBox, QDoubleSpinBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel,
+                               QPushButton, QVBoxLayout, QWidget)
 
 from ..core import sync
 from ..core.video import VideoError, extract_audio, trim
+from .analysis_form import hint
+from .components import StepCard
 from .single_page import SinglePage
 from .widgets import VideoPlayer, error_box
 
 
 class TwoPage(SinglePage):
     title = "Two cameras"
-    hint = ("Load a trial recorded from two viewpoints. Synchronise them with the clap (automatic from audio, or by "
-            "marking the clap frame in each video), check the alignment, then analyse. Camera A is the side view "
-            "used for sagittal angles and kinetics. 3D requires a DLT calibration and is reported as unvalidated.")
+    hint = "Two synchronised viewpoints. Camera A is the side view used for sagittal angles and kinetics."
+    two_camera = True
 
     def __init__(self, state):
         self.clap_a = None
         self.clap_b = None
         super().__init__(state)
-        self.player_b = VideoPlayer("Camera B")
-        self.player_b.btn_in.setVisible(False)
-        self.player_b.btn_out.setVisible(False)
-        self.player_b.range_label.setVisible(False)
-        # Side-by-side preview: A (side view) left, B right; results below.
-        from PySide6.QtCore import Qt
-        from PySide6.QtWidgets import QSplitter
-        self.hsplit = QSplitter(Qt.Orientation.Horizontal)
-        self.hsplit.addWidget(self.player)
-        self.hsplit.addWidget(self.player_b)
-        self.vsplit.insertWidget(0, self.hsplit)
-        self.vsplit.setSizes([400, 380])
         self.player.frameChanged.connect(self._follow_a)
         if self.trial is not None:
             self._trial_selected()
@@ -42,57 +31,83 @@ class TwoPage(SinglePage):
     def trial_filter(self, t) -> bool:
         return len(t.videos) > 1
 
-    def extra_controls(self, layout):
-        g = QGroupBox("Synchronisation")
-        f = QFormLayout(g)
-        self.btn_auto = QPushButton("Detect clap from audio")
-        self.btn_auto.setToolTip("Finds the sharpest loud transient in each audio track and aligns them.")
-        self.btn_auto.clicked.connect(self.auto_sync)
-        self.search_end = QDoubleSpinBox(); self.search_end.setRange(0, 600); self.search_end.setSuffix(" s")
-        self.search_end.setSpecialValueText("whole recording"); self.search_end.setValue(0)
-        self.search_end.setToolTip("Only search the first N seconds (useful if there are other loud sounds).")
-        f.addRow(self.btn_auto)
-        f.addRow("Search first", self.search_end)
+    def extra_steps(self, n: int):
+        self.player_b = VideoPlayer("Camera B")
+        self.player_b.btn_in.setVisible(False)
+        self.player_b.btn_out.setVisible(False)
+        self.player_b.range_label.setVisible(False)
+        self.video_area.addWidget(self.player_b)
+        body = QWidget()
+        lay = QVBoxLayout(body)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.addWidget(hint("One sharp clap at the start of each trial lets the app line up the two recordings. "
+                           "Check that both views show the hands meeting at the same moment."))
         row = QHBoxLayout()
-        self.btn_clap_a = QPushButton("Clap frame A = current")
+        self.btn_auto = QPushButton("Detect clap from audio")
+        self.btn_auto.setObjectName("primary")
+        self.btn_auto.setToolTip("Finds the sharpest loud transient in each audio track and aligns them")
+        self.btn_auto.clicked.connect(self.auto_sync)
+        row.addWidget(self.btn_auto, 1)
+        self.search_end = QDoubleSpinBox(); self.search_end.setRange(0, 600); self.search_end.setSuffix(" s")
+        self.search_end.setPrefix("search ")
+        self.search_end.setSpecialValueText("search all"); self.search_end.setValue(0)
+        self.search_end.setToolTip("Only search the first N seconds (useful if there are other loud sounds)")
+        row.addWidget(self.search_end)
+        lay.addLayout(row)
+        lay.addWidget(hint("Manual: step each video to the frame where the hands first touch."))
+        row = QHBoxLayout()
+        self.btn_clap_a = QPushButton("Clap is here in A")
         self.btn_clap_a.clicked.connect(lambda: self._mark_clap("a"))
-        self.btn_clap_b = QPushButton("Clap frame B = current")
+        self.btn_clap_b = QPushButton("Clap is here in B")
         self.btn_clap_b.clicked.connect(lambda: self._mark_clap("b"))
         row.addWidget(self.btn_clap_a); row.addWidget(self.btn_clap_b)
-        f.addRow(row)
+        lay.addLayout(row)
         self.btn_manual = QPushButton("Apply manual sync")
-        self.btn_manual.setToolTip("Use the frames where the hands first touch in each video.")
         self.btn_manual.clicked.connect(self.manual_sync)
-        f.addRow(self.btn_manual)
+        lay.addWidget(self.btn_manual)
+        fw = QWidget()
+        f = QFormLayout(fw)
+        f.setContentsMargins(0, 0, 0, 0)
         self.offset = QDoubleSpinBox(); self.offset.setRange(-600, 600); self.offset.setDecimals(4)
         self.offset.setSingleStep(0.001); self.offset.setSuffix(" s")
-        self.offset.setToolTip("t_A = t_B + offset. Fine-tune with the arrows while watching both views.")
+        self.offset.setToolTip("t_A = t_B + offset. Fine-tune with the arrows while watching both views")
         self.offset.valueChanged.connect(self._offset_edited)
-        f.addRow("Offset (B → A)", self.offset)
-        self.link = QCheckBox("Link playback (B follows A)"); self.link.setChecked(True)
-        f.addRow(self.link)
+        f.addRow("Offset B → A", self.offset)
+        lay.addWidget(fw)
+        self.link = QCheckBox("B follows A while scrubbing"); self.link.setChecked(True)
+        lay.addWidget(self.link)
         self.sync_label = QLabel("Not synchronised.")
         self.sync_label.setWordWrap(True); self.sync_label.setObjectName("muted")
-        f.addRow(self.sync_label)
+        lay.addWidget(self.sync_label)
         row = QHBoxLayout()
         self.btn_window = QPushButton("Use common window")
-        self.btn_window.setToolTip("Set the analysis interval to the time both cameras recorded.")
+        self.btn_window.setToolTip("Set the analysis interval to the time both cameras recorded")
         self.btn_window.clicked.connect(self.use_common_window)
         self.btn_aligned = QPushButton("Save aligned clips")
-        self.btn_aligned.setToolTip("Writes both videos trimmed to the analysis interval (originals untouched).")
+        self.btn_aligned.setToolTip("Writes both videos trimmed to the interval (originals untouched)")
         self.btn_aligned.clicked.connect(self.save_aligned)
         row.addWidget(self.btn_window); row.addWidget(self.btn_aligned)
-        f.addRow(row)
-        layout.addWidget(g)
-        g = QGroupBox("3D (optional)")
-        f = QFormLayout(g)
-        self.btn_dlt = QPushButton("Load DLT calibration…")
-        self.btn_dlt.setToolTip("CSV with X_m,Y_m,Z_m,uA,vA,uB,vB for >= 6 non-coplanar control points.")
+        lay.addLayout(row)
+        row = QHBoxLayout()
+        self.btn_dlt = QPushButton("Load 3D calibration…")
+        self.btn_dlt.setToolTip("Optional DLT calibration CSV with X_m,Y_m,Z_m,uA,vA,uB,vB for >= 6 points")
         self.btn_dlt.clicked.connect(self.load_dlt)
-        self.dlt_label = QLabel("No calibration: 2D per-view analysis only.")
+        row.addWidget(self.btn_dlt)
+        row.addStretch(1)
+        lay.addLayout(row)
+        self.dlt_label = QLabel("No 3D calibration: 2D per-view analysis only.")
         self.dlt_label.setObjectName("muted"); self.dlt_label.setWordWrap(True)
-        f.addRow(self.btn_dlt); f.addRow(self.dlt_label)
-        layout.addWidget(g)
+        lay.addWidget(self.dlt_label)
+        self.step_sync = self.acc.add(StepCard(n, "Synchronise the cameras", body, "Not synchronised"))
+
+    def _update_steps(self, *_):
+        super()._update_steps()
+        if hasattr(self, "step_sync") and self.trial is not None:
+            s = self.trial.sync
+            if "offset_s" in s:
+                self.step_sync.set_status(f"Offset {s['offset_s']:+.3f} s ({s.get('method')})", True)
+            else:
+                self.step_sync.set_status("Not synchronised: detect the clap", False)
 
     # ---------------------------------------------------------------------------------------
     def load_videos(self):
@@ -152,6 +167,7 @@ class TwoPage(SinglePage):
         self.offset.blockSignals(False)
         self.state.save()
         self._show_sync()
+        self._update_steps()
         self.player.seek(int(round(r.clap_a_s * self.player.fps)))
         self._follow_a(self.player.index)
 

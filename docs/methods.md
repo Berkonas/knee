@@ -143,7 +143,9 @@ so knee unloading and arm loading always come from one consistent assumption.
   (N·m·s/kg). This captures both the size and the duration of extensor demand.
 * **Impulse per metre descended:** the cumulative impulse divided by the height descended (step height × steps). This
   follows the per-unit-distance loading idea of Miller et al. (2014).
-* **Negative knee work** (J/kg), defined in §5d.
+* **Negative knee work** (J/kg), defined in §5d, and **peak knee power absorption** (W/kg, the magnitude of the most
+  negative knee power in stance).
+* **Impulse per step:** the cumulative impulse divided by the number of stance phases.
 
 These describe **mechanical loading**. They are not muscle fatigue (no EMG or force-decline measurement), perceived
 exertion, pain or injury risk, and the app never combines them into a "fatigue score". A defensible fatigue measure
@@ -177,7 +179,54 @@ offset = *f*<sub>A</sub>/fps<sub>A</sub> − *f*<sub>B</sub>/fps<sub>B</sub>. Co
 handled by resampling camera-B landmarks onto camera A's time base with linear interpolation. The tests check
 offsets within 5 ms on raw audio and within 8 ms after AAC encoding in MP4 files, with cameras at 60 fps and 30 fps.
 
-## 10. Statistics and comparisons
+## 10. Reference ranges (context, not good/bad)
+
+Each metric card shows the trial value against a published band for healthy adults descending stairs. The band is
+either mean ± 1 SD of a cited cohort or the range of study means from a review (`core/reference.py`; details and
+verification status in [research/reference-ranges.md](research/reference-ranges.md)):
+
+| Metric | Band | Source |
+|---|---|---|
+| Peak knee flexion (stance) | 76–89° | Lewis et al. 2015 (82.6 ± 6.6°, n = 30) |
+| Knee flexion range of motion | 76–90° | Zhang et al. 2020 review (study means) |
+| Peak hip flexion (stance) | 13–29° | Lewis et al. 2015 (21.2 ± 7.7°) |
+| Peak ankle dorsiflexion (stance) | 23–38° | Lewis et al. 2015 (30.6 ± 7.3°) |
+| Peak knee extensor moment | 1.0–1.6 N·m/kg | Zhang et al. 2020 review (late-stance peak, study means) |
+| Peak knee power absorption | 2.1–5.5 W/kg | Zhang et al. 2020 review; Riener et al. 2002 |
+
+The labels are *below typical*, *typical range* and *above typical*. They describe where a value sits relative
+to lab data. They are not health, performance or injury judgements. The bands come from 3D motion capture, while our
+values are 2D video estimates, and the scenario model has no impact peaks, so small offsets are expected. Compare
+conditions within a person first.
+
+## 11. Is a change bigger than the noise?
+
+Each participant repeats every condition (usually 3 trials). The app uses the **typical error** idea (Hopkins, 2000), which is the
+same logic as the minimal detectable change (Weir, 2005), applied to the mean of repeated trials. A difference
+between two condition means counts as *larger than the noise* when
+
+    |mean_condition − mean_baseline| > 1.96 · sqrt( SD_b² / n_b + SD_c² / n_c )
+
+where SD is that participant's trial-to-trial standard deviation in each condition. The overview figure colours these
+changes and greys out the rest. This is a per-person repeatability check, not a population significance test.
+
+## 12. Fatigue: what we report and why
+
+Published fatigue models, such as the three-compartment model of Xia and Frey-Law, implemented in bioptim
+(MIT), need each person's load as a percentage of their *maximal* knee strength. They are validated mainly for
+sustained isometric efforts. We have no strength testing, no EMG and no validation for eccentric stair descent, so a
+fatigue estimate would not be defensible. The app reports **mechanical demand** instead:
+
+* peak and cumulative knee extensor angular impulse (total, per step, and per metre descended)
+* negative knee work and peak knee power absorption
+* **change across repetitions** (Results → Repetitions). This plot shows drift over trials 1 → 3, which may reflect
+  fatigue, learning or pacing and cannot separate them.
+
+Other tools we checked: opencap-processing (Apache-2.0) needs 3D OpenCap data from two or more phones;
+opencap-monocular has a non-commercial licence; OpenSim needs 3D kinematics; kineticstoolkit (Apache-2.0) is
+an option for future filtering and cycle tools.
+
+## 13. Statistics and comparisons
 
 Trials are averaged **within each participant** first. Differences are reported per participant as absolute values and as
 100 × (condition − baseline) / |baseline|. Trial-to-trial variability is reported as SD and CV. Group summaries are
@@ -193,6 +242,10 @@ Full annotated list with verified DOIs: [research/literature.md](research/litera
 * Bazarevsky, V., et al. (2020). BlazePose: On-device real-time body pose tracking. arXiv:2006.10204.
 * de Leva, P. (1996). Adjustments to Zatsiorsky-Seluyanov's segment inertia parameters. *J. Biomech., 29*(9), 1223–1230. https://doi.org/10.1016/0021-9290(95)00178-6
 * Dempster, W. T. (1955). *Space requirements of the seated operator* (WADC-TR-55-159).
+* Hopkins, W. G. (2000). Measures of reliability in sports medicine and science. *Sports Med., 30*(1), 1–15.
+* Lewis, J., et al. (2015). *J. Electromyogr. Kinesiol., 25*(6), 982–989 (PMC4658237).
+* Weir, J. P. (2005). Quantifying test-retest reliability using the intraclass correlation coefficient and the SEM. *J. Strength Cond. Res., 19*(1), 231–240.
+* Zhang, et al. (2020). Review of stair-descent biomechanics. https://doi.org/10.1155/2020/7451683 (see reference-ranges.md)
 * Jensen, S. B., et al. (2011). Can hiking poles reduce knee joint compression force? *Scand. J. Med. Sci. Sports* (see literature.md).
 * Krevolin, J. L., Pandy, M. G., & Pearce, J. C. (2004). *J. Biomech., 37*(5), 785–788. https://doi.org/10.1016/j.jbiomech.2003.09.010
 * Miller, R. H., et al. (2014). *Med. Sci. Sports Exerc., 46*(3), 572–579. https://doi.org/10.1249/MSS.0000000000000135

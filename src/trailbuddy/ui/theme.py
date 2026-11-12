@@ -21,6 +21,34 @@ EVIDENCE_COLORS = {  # background, text
 }
 
 QSS = f"""
+QFrame#card {{ background: {SURFACE}; border: 1px solid {LINE}; border-radius: 10px; }}
+QLabel#cardTitle {{ font-size: 14px; font-weight: 600; }}
+QFrame#step {{ background: {SURFACE}; border: 1px solid {LINE}; border-radius: 10px; }}
+QFrame#step[open="true"] {{ border: 1px solid #8FBDB6; }}
+QPushButton#stepHeader {{ background: transparent; border: none; text-align: left; padding: 0; border-radius: 10px; }}
+QPushButton#stepHeader:hover {{ background: #F3F7F6; }}
+QLabel#stepBadge {{ background: #E3EBE9; color: {INK}; border-radius: 12px; font-weight: 600; font-size: 12px; }}
+QLabel#stepBadge[done="true"] {{ background: {ACCENT}; color: #FFFFFF; }}
+QLabel#stepTitle {{ font-weight: 600; font-size: 13px; background: transparent; }}
+QLabel#stepStatus {{ color: {MUTED}; font-size: 12px; background: transparent; }}
+QWidget#stepBody {{ background: transparent; }}
+QWidget#segmented {{ background: #E3E9E8; border-radius: 8px; }}
+QPushButton#segment {{ background: transparent; border: none; border-radius: 6px; padding: 5px 14px; color: {MUTED}; font-weight: 500; }}
+QPushButton#segment:checked {{ background: {SURFACE}; color: {INK}; font-weight: 600; }}
+QPushButton#segment:hover:!checked {{ color: {INK}; }}
+QFrame#metricCard {{ background: {SURFACE}; border: 1px solid {LINE}; border-radius: 10px; }}
+QFrame#metricCard:hover {{ border-color: #8FBDB6; }}
+QLabel#metricLabel {{ color: {MUTED}; font-size: 12px; }}
+QLabel#metricValue {{ font-size: 24px; font-weight: 600; color: {INK}; }}
+QLabel#metricValueNA {{ font-size: 18px; font-weight: 500; color: #9AA6A3; }}
+QLabel#metricUnit {{ color: {MUTED}; font-size: 12px; padding-bottom: 4px; }}
+QLabel#metricRef {{ color: {MUTED}; font-size: 11px; }}
+QLabel#metricNote {{ color: #7A8784; font-size: 11px; }}
+QLabel#groupTitle {{ font-size: 15px; font-weight: 600; padding: 10px 0 2px 2px; }}
+QLabel#reportTitle {{ font-size: 18px; font-weight: 600; }}
+QLabel#chip {{ background: #E3EBE9; border-radius: 9px; padding: 2px 9px; font-size: 11px; color: {INK}; }}
+QLabel#chipWarn {{ background: #F7E9D2; border-radius: 9px; padding: 2px 9px; font-size: 11px; color: #7A4A08; }}
+QScrollArea#reportScroll > QWidget > QWidget {{ background: {BG}; }}
 * {{ font-size: 13px; color: {INK}; }}
 QMainWindow, QWidget#page {{ background: {BG}; }}
 QWidget#sidebar {{ background: {SIDEBAR}; }}

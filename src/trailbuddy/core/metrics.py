@@ -23,6 +23,10 @@ KINDS = {
 }
 
 
+SHORT_KINDS = {"measured": "Measured", "video": "Video 2D", "model": "Model", "scenario": "Scenario",
+               "input": "Input", "unavailable": "Unavailable"}
+
+
 @dataclass(frozen=True)
 class MetricInfo:
     label: str
@@ -47,6 +51,26 @@ INFO: dict[str, MetricInfo] = {
         "Describes the knee motion strategy used to lower the body.",
         "Whether the movement pattern differs between conditions.",
         "Not a loading measure."),
+    "knee_flexion_at_contact": MetricInfo(
+        "Knee flexion at foot contact", "deg",
+        "2D knee flexion at the instant the analysed foot lands on the next step.",
+        "Landing with a straighter knee transmits more impact; poles may let people land differently.",
+        "Whether the landing strategy changes between conditions.",
+        "Contact timing from video is approximate (+-1-2 frames)."),
+    "knee_flexion_velocity_peak": MetricInfo(
+        "Peak knee flexion velocity (loaded)", "deg/s",
+        "Fastest rate of knee bending while the foot carries weight.",
+        "A slower, more controlled lowering suggests the quadriceps are braking more smoothly.",
+        "Whether pole use changes how quickly the knee 'gives' under load.",
+        "Velocity amplifies tracking noise; filtering affects the value."),
+    "hip_flexion_peak": MetricInfo(
+        "Peak hip flexion (stance)", "deg", "Largest 2D hip flexion while the foot is loaded.",
+        "Hip strategy can share the work of lowering the body with the knee.",
+        "Whether load-sharing between hip and knee changes.", "2D projection; not hip load."),
+    "ankle_dorsiflexion_peak": MetricInfo(
+        "Peak ankle dorsiflexion (stance)", "deg", "Largest 2D ankle dorsiflexion while the foot is loaded.",
+        "Stair descent relies heavily on ankle dorsiflexion to lower the body.",
+        "Ankle strategy differences.", "MediaPipe foot landmarks are less precise than knee/hip."),
     "trunk_lean_mean": MetricInfo(
         "Mean trunk forward lean", "deg",
         "Average angle of the hip-to-shoulder line from vertical (+ = forward).",
@@ -81,12 +105,17 @@ INFO: dict[str, MetricInfo] = {
     "step_time_mean": MetricInfo(
         "Mean step time", "s", "Time between contacts of alternating feet.",
         "Pace and rhythm.", "Rhythm differences.", "Approximate event timing from video."),
+    "step_time_cv": MetricInfo(
+        "Step time variability (CV)", "%",
+        "Coefficient of variation of step time within the trial.",
+        "Steadier stepping; higher variability can indicate less confident or less consistent descent.",
+        "Consistency differences between conditions.", "Needs several steps; few steps give an unstable CV."),
     "stance_time_mean": MetricInfo(
         "Mean stance time (analysed leg)", "s", "Duration of each complete foot contact.",
         "Longer stance spreads load over time (affects impulse).", "Timing differences.",
         "Partial stances at clip edges are excluded."),
     "knee_ext_moment_peak": MetricInfo(
-        "Peak knee extensor moment", "N*m/kg",
+        "Peak knee extensor moment", "N·m/kg",
         "Largest internal knee extensor moment during stance, normalised to body mass.",
         "This is the rotational demand the quadriceps must resist while lowering the body.",
         "How much the knee extensor demand differs between conditions under the stated model.",
@@ -103,15 +132,20 @@ INFO: dict[str, MetricInfo] = {
         "Peak quadriceps force estimate", "x BW", "Peak quadriceps force / body weight.",
         "Size-independent comparison.", "Relative differences.", "Same limits as above."),
     "knee_ext_impulse_total": MetricInfo(
-        "Cumulative knee extensor angular impulse", "N*m*s/kg",
+        "Cumulative knee extensor angular impulse", "N·m·s/kg",
         "Time integral of the knee extensor moment over all stance phases in the window "
         "(mechanical-demand metric).",
         "Captures both how large and how long the knee extensor demand is; cumulative-load "
         "concepts are used to compare repeated loading across tasks.",
         "Differences in accumulated knee extensor demand for the same descent.",
         "Not muscle fatigue, perceived exertion, injury risk or pain."),
+    "knee_ext_impulse_per_step": MetricInfo(
+        "Knee extensor angular impulse per step", "N·m·s/kg",
+        "Cumulative knee extensor angular impulse divided by the number of stance phases.",
+        "Average knee demand per step, comparable across trials with different numbers of steps.",
+        "Per-step mechanical demand differences.", "Not fatigue; same model limitations as the moment."),
     "knee_ext_impulse_per_m": MetricInfo(
-        "Knee extensor angular impulse per metre descended", "N*m*s/kg/m",
+        "Knee extensor angular impulse per metre descended", "N·m·s/kg per m",
         "Cumulative impulse divided by vertical height descended in the window.",
         "Normalises demand to the amount of descent (per-unit-distance load).",
         "Demand per unit of descent, comparable across trials of different length.",
@@ -123,14 +157,20 @@ INFO: dict[str, MetricInfo] = {
         "downhill exercise.",
         "Change in energy absorbed at the knee between conditions.",
         "Not metabolic cost or fatigue; depends on model and filtering."),
+    "knee_power_absorption_peak": MetricInfo(
+        "Peak knee power absorption", "W/kg",
+        "Largest rate of energy absorption at the knee during stance (magnitude of the most negative power).",
+        "Shows how hard the quadriceps brake the body at the moment of greatest demand.",
+        "Change in peak eccentric braking demand between conditions.",
+        "Depends on moment model and on differentiated angles (noise-sensitive); not fatigue."),
     "elbow_moment_peak": MetricInfo(
-        "Peak elbow moment", "N*m",
+        "Peak elbow moment", "N·m",
         "Quasi-static internal elbow moment from the pole force at the hand.",
         "Shows whether knee unloading is 'paid for' at the arm.",
         "Relative arm demand under the stated pole force.",
         "Pole force is assumed unless measured; not an injury risk measure."),
     "shoulder_moment_peak": MetricInfo(
-        "Peak shoulder moment", "N*m",
+        "Peak shoulder moment", "N·m",
         "Quasi-static internal shoulder moment from the pole force at the hand and arm weight.",
         "Secondary effect: upper-body demand created by pole use.",
         "Relative shoulder demand under the stated pole force.",
@@ -157,6 +197,20 @@ INFO: dict[str, MetricInfo] = {
         "-",
         "Not estimated: requires a musculoskeletal model with hamstring/gastrocnemius "
         "co-contraction and measured ground reaction forces (e.g. OpenSim with force-plate data)."),
+}
+
+
+# Report grouping (order matters: shown top to bottom).
+CATEGORIES: dict[str, list[str]] = {
+    "Knee load": ["quad_force_peak", "quad_force_peak_bw", "knee_ext_moment_peak", "knee_ext_impulse_total",
+                  "knee_ext_impulse_per_step", "knee_ext_impulse_per_m", "knee_neg_work", "knee_power_absorption_peak",
+                  "tibiofemoral_compression"],
+    "Knee and leg movement": ["knee_flexion_peak", "knee_flexion_at_contact", "knee_flexion_velocity_peak",
+                              "knee_flexion_rom", "hip_flexion_peak", "ankle_dorsiflexion_peak"],
+    "Trunk, arms and poles": ["trunk_lean_mean", "shoulder_flexion_peak", "elbow_flexion_mean", "elbow_moment_peak",
+                              "shoulder_moment_peak", "pole_support_fraction", "pole_contact_time",
+                              "pole_angle_at_contact"],
+    "Pace and rhythm": ["speed", "cadence", "step_time_mean", "step_time_cv", "stance_time_mean"],
 }
 
 

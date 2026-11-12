@@ -111,6 +111,17 @@ def analyse(pose: PoseSeries, body_mass: float, height_m: float, settings: Analy
     for k, v in kin.angles.items():
         ts[f"{k}_deg"] = v
     ts[f"{side}_stance"] = stance.astype(int)
+    other_side = "left" if side == "right" else "right"
+    ts[f"{other_side}_stance"] = stance_mask(t, gait.contacts.get(other_side, [])).astype(int)
+    # Raw segment-endpoint trajectories (lab frame, analysed side) for stick figures and re-analysis.
+    unit = kin.units
+    for nm in ("shoulder", "elbow", "wrist", "hip", "knee", "ankle", "heel", "foot_index"):
+        xy = kin.get(side, nm)
+        ts[f"{side}_{nm}_x_{unit}"] = xy[:, 0]
+        ts[f"{side}_{nm}_y_{unit}"] = xy[:, 1]
+    for nm in ("mid_hip", "mid_shoulder"):
+        ts[f"{nm}_x_{unit}"] = kin.pts[nm][:, 0]
+        ts[f"{nm}_y_{unit}"] = kin.pts[nm][:, 1]
 
     M: list[MetricValue] = []
     a = kin.angles
@@ -118,6 +129,21 @@ def analyse(pose: PoseSeries, body_mass: float, height_m: float, settings: Analy
     M.append(MetricValue("knee_flexion_peak", _peak(kf, stance if stance.any() else None), "video",
                          f"{side} leg"))
     M.append(MetricValue("knee_flexion_rom", float(np.nanmax(kf) - np.nanmin(kf)) if np.isfinite(kf).any() else None,
+                         "video", f"{side} leg"))
+    kf_vel = -np.gradient(np.radians(kf), 1.0 / kin.fs)  # extension velocity, rad/s
+    if stance.any() and np.isfinite(kf[stance]).any():
+        first = [c.start_i for c in gait.contacts.get(side, []) if c.start_i > 0]
+        M.append(MetricValue("knee_flexion_at_contact",
+                             float(np.nanmean(kf[first])) if first else None, "video",
+                             f"{side} leg, mean of {len(first)} contacts" if first else "No foot strike in window."))
+        M.append(MetricValue("knee_flexion_velocity_peak", float(np.degrees(np.nanmax(-kf_vel[stance]))), "video",
+                             "fastest knee flexion while loaded (controlled lowering)"))
+    else:
+        M.append(MetricValue("knee_flexion_at_contact", None, "unavailable", "Needs foot contacts."))
+        M.append(MetricValue("knee_flexion_velocity_peak", None, "unavailable", "Needs foot contacts."))
+    M.append(MetricValue("hip_flexion_peak", _peak(a[f"{side}_hip_flexion"], stance if stance.any() else None),
+                         "video", f"{side} leg"))
+    M.append(MetricValue("ankle_dorsiflexion_peak", _peak(a[f"{side}_ankle_dorsiflexion"], stance if stance.any() else None),
                          "video", f"{side} leg"))
     M.append(MetricValue("trunk_lean_mean", float(np.nanmean(a["trunk_lean"])), "video"))
     M.append(MetricValue("shoulder_flexion_peak", _peak(a[f"{side}_shoulder_flexion"]), "video", f"{side} arm"))
@@ -128,6 +154,8 @@ def analyse(pose: PoseSeries, body_mass: float, height_m: float, settings: Analy
     st = gait.step_times()
     M.append(MetricValue("step_time_mean", float(st.mean()) if len(st) else None, "video",
                          sd=float(st.std(ddof=1)) if len(st) > 1 else None))
+    M.append(MetricValue("step_time_cv", float(100 * st.std(ddof=1) / st.mean()) if len(st) > 2 else None,
+                         "video" if len(st) > 2 else "unavailable", "" if len(st) > 2 else "Needs at least 3 steps."))
     sd_ = gait.stance_durations(side, t[0], t[-1])
     M.append(MetricValue("stance_time_mean", float(sd_.mean()) if len(sd_) else None, "video",
                          "" if len(sd_) else "No complete stance in window.",
@@ -280,6 +308,11 @@ def analyse(pose: PoseSeries, body_mass: float, height_m: float, settings: Analy
         M.append(MetricValue("quad_force_peak_bw", float(q_nom.max()) / (body_mass * G), kinetics_kind,
                              low=float(q_lo.max()) / (body_mass * G), high=float(q_hi.max()) / (body_mass * G)))
         imp = dyn.integrate(np.maximum(mk_pos, 0), t) / body_mass
+        from scipy.integrate import cumulative_trapezoid
+        ts[f"{side}_knee_ext_impulse_cum_nms_per_kg"] = cumulative_trapezoid(np.maximum(mk_pos, 0), t, initial=0) / body_mass
+        n_st = max(1, len([c for c in gait.contacts.get(side, [])]))
+        M.append(MetricValue("knee_ext_impulse_per_step", imp / n_st, kinetics_kind,
+                             f"{n_st} stance phase(s) of the {side} leg"))
         M.append(MetricValue("knee_ext_impulse_total", imp, kinetics_kind, "mechanical demand, not fatigue"))
         if s.descent_height_m:
             M.append(MetricValue("knee_ext_impulse_per_m", imp / s.descent_height_m, kinetics_kind))
@@ -287,6 +320,10 @@ def analyse(pose: PoseSeries, body_mass: float, height_m: float, settings: Analy
             M.append(MetricValue("knee_ext_impulse_per_m", None, "unavailable", "Enter the height descended."))
         negw = dyn.integrate(np.minimum(np.nan_to_num(power), 0), t, stance) / body_mass
         M.append(MetricValue("knee_neg_work", negw, kinetics_kind))
+        pw = np.where(stance, power, np.nan)
+        M.append(MetricValue("knee_power_absorption_peak",
+                             float(-np.nanmin(pw)) / body_mass if np.isfinite(pw).any() and np.nanmin(pw) < 0 else None,
+                             kinetics_kind, "magnitude of the most negative knee power"))
 
         # Sensitivity of the scenario model to its assumptions.
         if kinetics_kind == "scenario":
@@ -320,7 +357,7 @@ def analyse(pose: PoseSeries, body_mass: float, height_m: float, settings: Analy
         if "reason_override" in locals():
             reason = reason_override
         for key in ("knee_ext_moment_peak", "quad_force_peak", "quad_force_peak_bw",
-                    "knee_ext_impulse_total", "knee_ext_impulse_per_m", "knee_neg_work"):
+                    "knee_ext_impulse_total", "knee_ext_impulse_per_m", "knee_neg_work", "knee_power_absorption_peak"):
             M.append(MetricValue(key, None, "unavailable", reason))
 
     # ---- upper-limb kinetics ----------------------------------------------------------------

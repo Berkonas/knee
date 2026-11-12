@@ -224,3 +224,217 @@ def save(fig: Figure, path_stem, formats=("png", "svg", "pdf")) -> list:
         fig.savefig(p)
         out.append(p)
     return out
+
+
+# =============================================================================================
+# Second-generation figures: timeline, stick strip, multi-metric comparisons
+# =============================================================================================
+
+def _intervals(mask: np.ndarray, t: np.ndarray):
+    m = np.asarray(mask).astype(bool)
+    edges = np.flatnonzero(np.diff(np.concatenate(([0], m.astype(int), [0]))))
+    return [(t[a], t[b - 1]) for a, b in zip(edges[::2], edges[1::2])]
+
+
+def fig_timeline(res, title: str = "", playhead: float | None = None) -> Figure:
+    """Movement timeline on one time axis: joint angles, contacts, knee load, cumulative demand."""
+    ts, s = res.timeseries, res.side
+    t = ts["time_s"].to_numpy()
+    has_load = f"{s}_knee_extensor_moment_nm" in ts
+    rows = 4 if has_load else 2
+    ratios = [3, 1.1, 2.4, 1.8][:rows] if has_load else [3, 1.1]
+    fig, axs = _fig(7.2, 1.55 * sum(ratios), rows, 1, sharex=True, gridspec_kw={"height_ratios": ratios})
+    a1, a2 = axs[0], axs[1]
+    for col, lab, c in [(f"{s}_knee_flexion_deg", "Knee flexion", PALETTE[0]),
+                        (f"{s}_hip_flexion_deg", "Hip flexion", PALETTE[1]),
+                        (f"{s}_ankle_dorsiflexion_deg", "Ankle dorsiflexion", PALETTE[2]),
+                        ("trunk_lean_deg", "Trunk lean", PALETTE[3])]:
+        if col in ts:
+            a1.plot(t, ts[col], color=c, label=lab, lw=1.8 if "knee" in col else 1.2)
+    a1.set_ylabel("Angle (deg, 2D)")
+    a1.legend(loc="upper left", ncols=4, frameon=False, fontsize=7.5)
+    # contact lanes
+    lanes = [(f"{s}_stance", f"{s.capitalize()} foot", "#4D4D4D")]
+    other = "left" if s == "right" else "right"
+    if f"{other}_stance" in ts:
+        lanes.append((f"{other}_stance", f"{other.capitalize()} foot", "#9A9A9A"))
+    for p_ in ("left", "right"):
+        if f"pole_{p_}_contact" in ts:
+            lanes.append((f"pole_{p_}_contact", f"{p_.capitalize()} pole", "#D55E00"))
+    for i, (col, _lab, c) in enumerate(lanes):
+        for a, b in _intervals(ts[col].to_numpy(), t):
+            a2.broken_barh([(a, max(b - a, 1e-3))], (i - 0.32, 0.64), color=c)
+    a2.set_yticks(range(len(lanes)), [lab for _, lab, _ in lanes])
+    a2.set_ylim(-0.6, len(lanes) - 0.4)
+    a2.invert_yaxis()
+    a2.grid(False)
+    a2.set_title("Ground contacts (bars = in contact)", loc="left", fontsize=8.5)
+    for ax in axs[:1]:
+        _shade_stance(ax, ts, s)
+    if has_load:
+        a3, a4 = axs[2], axs[3]
+        bw_scale = None
+        m = ts[f"{s}_knee_extensor_moment_nm"]
+        a3.plot(t, m, color=PALETTE[1], label="Knee extensor moment")
+        a3.axhline(0, color="k", lw=0.6)
+        a3.set_ylabel("N·m")
+        q = res.metric("quad_force_peak")
+        kind = res.metric("knee_ext_moment_peak").kind if res.metric("knee_ext_moment_peak") else ""
+        a3.set_title(f"Knee extensor moment [{kind}]", loc="left", fontsize=8.5)
+        _shade_stance(a3, ts, s)
+        cum = ts.get(f"{s}_knee_ext_impulse_cum_nms_per_kg")
+        if cum is not None:
+            a4.plot(t, cum, color=PALETTE[0])
+            a4.fill_between(t, 0, cum, color=PALETTE[0], alpha=0.12)
+            a4.set_ylabel("N·m·s/kg")
+            a4.set_title("Cumulative knee extensor demand (mechanical, not fatigue)", loc="left", fontsize=8.5)
+        del bw_scale, q
+    axs[-1].set_xlabel("Time (s)")
+    if playhead is not None:
+        for ax in axs:
+            ax.axvline(playhead, color="#B3261E", lw=1)
+    fig.suptitle(title or f"Movement timeline, {s} side", fontsize=10, x=0.01, ha="left")
+    return fig
+
+
+def fig_stick_strip(res, n_frames: int = 7, title: str = "") -> Figure:
+    """Sagittal stick figures (trunk, analysed leg and arm) through the clearest stance, plus knee angle."""
+    ts, s = res.timeseries, res.side
+    unit = "m" if f"{s}_knee_x_m" in ts else "px"
+    need = [f"{s}_{n}_x_{unit}" for n in ("hip", "knee", "ankle", "heel", "foot_index", "shoulder", "elbow", "wrist")]
+    fig, ax = _fig(7.2, 2.8)
+    if not all(c in ts for c in need):
+        ax.text(0.5, 0.5, "Segment trajectories not available (re-run the analysis)", ha="center",
+                va="center", transform=ax.transAxes)
+        ax.set_axis_off()
+        return fig
+    t = ts["time_s"].to_numpy()
+    st = _intervals(ts[f"{s}_stance"].to_numpy(), t)
+    full = [iv for iv in st if iv[0] > t[0] and iv[1] < t[-1]] or st
+    a, b = max(full, key=lambda iv: iv[1] - iv[0]) if full else (t[0], t[-1])
+    idxs = [int(np.argmin(np.abs(t - x))) for x in np.linspace(a, b, n_frames)]
+    P = lambda nm, i: (ts[f"{s}_{nm}_x_{unit}"].iloc[i], ts[f"{s}_{nm}_y_{unit}"].iloc[i])  # noqa: E731
+    span = (ts[f"{s}_hip_y_{unit}"] - ts[f"{s}_ankle_y_{unit}"]).abs().median()
+    gap = 0.9 * float(span) if np.isfinite(span) and span > 0 else 1.0
+    import matplotlib.cm as cm
+    cmap = cm.get_cmap("viridis") if hasattr(cm, "get_cmap") else __import__("matplotlib").colormaps["viridis"]
+    for k, i in enumerate(idxs):
+        x0 = P("hip", i)[0]
+        def X(nm):
+            x, y = P(nm, i)
+            return x - x0 + k * gap, y
+        c = cmap(k / max(1, n_frames - 1))
+        chains = [("shoulder", "hip"), ("hip", "knee"), ("knee", "ankle"), ("ankle", "heel"),
+                  ("heel", "foot_index"), ("ankle", "foot_index"), ("shoulder", "elbow"), ("elbow", "wrist")]
+        for u, v in chains:
+            (x1, y1), (x2, y2) = X(u), X(v)
+            ax.plot([x1, x2], [y1, y2], color=c, lw=2.4 if u in ("hip", "knee") else 1.4, solid_capstyle="round")
+        kx, ky = X("knee")
+        kfv = ts[f"{s}_knee_flexion_deg"].iloc[i]
+        ax.annotate(f"{kfv:.0f}°", (kx, ky), xytext=(6, 0), textcoords="offset points", fontsize=7, color=c)
+        ax.text(X("hip")[0], ax.get_ylim()[0], f"{100 * (t[i] - a) / max(b - a, 1e-9):.0f}%", fontsize=7,
+                ha="center", va="bottom", color="#5E6E6B")
+    ax.set_aspect("equal", adjustable="datalim")
+    ax.set_xticks([])
+    ax.set_ylabel(f"Height ({unit})")
+    ax.grid(False)
+    ax.set_title(title or f"Leg configuration through stance ({s} leg, % of stance; knee flexion labelled)")
+    return fig
+
+
+CAP = 50.0  # % change shown on the overview axis; larger values are drawn as arrows at the edge
+
+
+def fig_metric_overview(changes: pd.DataFrame, title: str = "") -> Figure:
+    """Forest-style overview: % change vs baseline for many metrics; dots = participants, bar = mean.
+
+    changes: rows with columns metric, label, condition, participant, pct_diff, clear (bool).
+    """
+    conds = sorted(changes.condition.unique()) if len(changes) else []
+    metrics = list(dict.fromkeys(changes.label)) if len(changes) else []
+    fig, axs = _fig(3.0 + 2.6 * max(1, len(conds)), 0.34 * max(4, len(metrics)) + 1.3, 1, max(1, len(conds)),
+                    sharey=True, squeeze=False)
+    axs = axs[0]
+    if not len(changes):
+        axs[0].text(0.5, 0.5, "Needs a baseline condition and at least one comparison condition",
+                    ha="center", va="center", transform=axs[0].transAxes)
+        axs[0].set_axis_off()
+        return fig
+    y = {m: i for i, m in enumerate(metrics)}
+    for ax, c in zip(axs, conds):
+        d = changes[changes.condition == c]
+        for lab, g in d.groupby("label"):
+            yy = y[lab]
+            mean = g.pct_diff.mean()
+            ax.plot([0, mean], [yy, yy], color=cond_color(c), lw=5, alpha=0.35, solid_capstyle="butt")
+            for r in g.itertuples():
+                x = float(np.clip(r.pct_diff, -CAP, CAP))
+                ax.scatter(x, yy, s=28, zorder=3, edgecolor="white", lw=0.6,
+                           marker="o" if abs(r.pct_diff) <= CAP else (">" if r.pct_diff > 0 else "<"),
+                           color=cond_color(c) if r.clear else "#B5B5B5")
+        ax.axvline(0, color="k", lw=0.8)
+        ax.set_title(f"{c} vs baseline", fontsize=9)
+        ax.set_xlabel("Change from baseline (%)")
+        lim = min(CAP, np.nanmax(np.abs(d.pct_diff))) if len(d) else 10
+        ax.set_xlim(-1.15 * max(lim, 5), 1.15 * max(lim, 5))
+    axs[0].set_yticks(range(len(metrics)), metrics)
+    axs[0].invert_yaxis()
+    fig.suptitle(title or "Change from baseline, every metric. Dot = participant (coloured: larger than their "
+                 "trial-to-trial noise; grey: within noise). Bar = mean.", fontsize=8.5, x=0.01, ha="left")
+    return fig
+
+
+def fig_dose_response(long: pd.DataFrame, metric: str, offsets: dict[str, float | None]) -> Figure:
+    """Metric vs pole length offset (no poles shown separately), one line per participant."""
+    info = INFO.get(metric)
+    fig, ax = _fig(5.0, 3.3)
+    d = long[(long.metric == metric)].dropna(subset=["value"])
+    if d.empty:
+        ax.text(0.5, 0.5, "No values yet", ha="center", va="center", transform=ax.transAxes)
+        return fig
+    x_none = min([v for v in offsets.values() if v is not None], default=0) - 7.5
+    for j, (pid, g) in enumerate(d.groupby("participant")):
+        pts = []
+        for code, gg in g.groupby("condition"):
+            off = offsets.get(code)
+            x = x_none if off is None else off
+            ax.scatter(np.full(len(gg), x) + 0.25 * (j - 1), gg.value, s=10, color="#B5B5B5", zorder=2)
+            pts.append((x, gg.value.mean()))
+        pts.sort()
+        poles = [(x, v) for x, v in pts if x != x_none]
+        nop = [(x, v) for x, v in pts if x == x_none]
+        col = PALETTE[j % len(PALETTE)]
+        if poles:
+            ax.plot(*zip(*poles), marker="o", color=col, label=pid)
+        if nop:
+            ax.plot(*zip(*nop), marker="s", color=col, ls="none")
+    ticks = sorted({x_none} | {v for v in offsets.values() if v is not None})
+    ax.set_xticks(ticks, ["no poles" if x == x_none else f"{x:+g} cm" for x in ticks])
+    ax.axvline(x_none + 3.75, color="#C9D3D1", lw=1)
+    ax.set_xlabel("Pole length relative to standard")
+    ax.set_ylabel(f"{info.label} ({info.unit})" if info else metric)
+    ax.set_title("Pole-length response (participant means; grey = trials)")
+    ax.legend(frameon=False)
+    return fig
+
+
+def fig_repetition(long: pd.DataFrame, metric: str) -> Figure:
+    """Metric across repetitions (trial 1 -> 3) within each participant x condition: within-session drift."""
+    info = INFO.get(metric)
+    fig, ax = _fig(5.0, 3.2)
+    d = long[(long.metric == metric)].dropna(subset=["value"])
+    if d.empty:
+        ax.text(0.5, 0.5, "No values yet", ha="center", va="center", transform=ax.transAxes)
+        return fig
+    styles = ["-", "--", ":", "-."]
+    for j, (pid, g) in enumerate(d.groupby("participant")):
+        for i, (code, gg) in enumerate(g.groupby("condition")):
+            gg = gg.sort_values("trial")
+            ax.plot(gg.trial, gg.value, marker="o", color=cond_color(code, i), ls=styles[j % 4],
+                    label=f"{pid} {code}", ms=4)
+    ax.set_xlabel("Repetition (trial number)")
+    ax.set_ylabel(f"{info.label} ({info.unit})" if info else metric)
+    ax.set_xticks(sorted(d.trial.unique()))
+    ax.set_title("Change across repetitions (drift can reflect fatigue, learning or pacing)")
+    ax.legend(frameon=False, ncols=2, fontsize=7)
+    return fig

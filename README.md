@@ -59,10 +59,17 @@ one-time security prompt.
    You can also click **Click to annotate** and mark the tip by hand.
 8. **External forces.** Pole force can't be seen on video. Choose a **scenario** (e.g. 10% body weight per
    planted pole), or import measured force data.
-9. **Run analysis.** The Summary tab lists every metric with its evidence label. The plot tabs show joint angles,
-   knee load, contact events and the sensitivity analysis.
-10. **Results** compares conditions within each participant. **Export all results…** writes CSV files, an Excel
-    workbook, PNG, SVG and PDF figures, and a plain-language summary.
+9. **Run analysis.** The **Report** opens with a card for every metric, each showing its evidence label and where
+   the value sits against published stair-descent ranges (below, typical or above). The report also has a movement
+   timeline, the leg's motion through stance, and the sensitivity analysis. Click the knee timeline under the video to jump to any moment.
+10. **Results** compares conditions within each participant:
+    * an **overview** of every metric, which highlights changes larger than that person's trial-to-trial noise
+    * **pole-length** response
+    * **repetition** trends
+    * the **knee vs. arm trade-off**
+    * stance curves
+
+    **Export all results…** writes the raw data, CSV files, an Excel workbook, PNG, SVG and PDF figures, and a plain-language summary.
 
 The **Create demo study** button builds a study from synthetic data so you can try the Results page right away.
 These are not real results.

@@ -143,3 +143,29 @@ def test_trial_figures_render():
     res, _ = run(uses_poles=True, mode="scenario")
     for f in (plots.fig_kinematics(res), plots.fig_knee_load(res), plots.fig_events(res), plots.fig_sensitivity(res)):
         assert len(f.axes) >= 1
+
+
+def test_export_includes_changes_raw_data_and_trial_figures(tmp_path):
+    from trailbuddy.core.demo import build_demo_project
+    pr = build_demo_project(tmp_path / "demo")
+    files = export.export_project(pr, tmp_path / "out", fig_formats=("png",))
+    ch = pd.read_csv(files["changes_csv"])
+    assert {"noise_95", "clear", "pct_diff"} <= set(ch.columns) and len(ch) > 20
+    assert (files["raw_dir"] / "P01_C0_T01" / "timeseries.csv").exists()
+    assert (tmp_path / "out" / "figures" / "trials" / "P01_C1_T02" / "timeline.png").exists()
+    assert (tmp_path / "out" / "figures" / "overview_all_metrics.png").exists()
+    xl = pd.ExcelFile(files["xlsx"])
+    assert {"Changes vs baseline", "Reference ranges"} <= set(xl.sheet_names)
+    ts = pd.read_csv(files["raw_dir"] / "P01_C0_T01" / "timeseries.csv")
+    assert "right_knee_x_m" in ts and "right_knee_ext_impulse_cum_nms_per_kg" in ts
+
+
+def test_reference_classification():
+    from trailbuddy.core import reference
+    assert reference.classify("knee_flexion_peak", 70) == "below"
+    assert reference.classify("knee_flexion_peak", 80) == "within"
+    assert reference.classify("knee_flexion_peak", 95) == "above"
+    assert reference.classify("speed", 1.0) is None
+    for k in reference.RANGES:
+        from trailbuddy.core.metrics import INFO
+        assert k in INFO
