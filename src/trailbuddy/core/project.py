@@ -33,6 +33,15 @@ EXPERIMENTS: dict[str, dict] = {
                             Condition("C3", "Standard + 5 cm", True, 5.0)]},
 }
 
+# Optional tape-measure body metrics (metres). Landmark definitions are shown in the app.
+SEGMENT_FIELDS = {
+    "thigh_m": ("Thigh length", "Greater trochanter (bony point at the side of the hip) to the knee joint line"),
+    "shank_m": ("Shank length", "Knee joint line to the outer ankle bone (lateral malleolus)"),
+    "foot_m": ("Foot length", "Back of the heel to the tip of the longest toe"),
+    "upper_arm_m": ("Upper-arm length", "Top of the shoulder (acromion) to the outer elbow (lateral epicondyle)"),
+    "forearm_m": ("Forearm length", "Outer elbow to the wrist bone on the little-finger side (ulnar styloid)"),
+}
+
 PID_RE = re.compile(r"^[A-Za-z0-9_-]{1,16}$")
 
 
@@ -43,7 +52,7 @@ class Participant:
     height_m: float
     leg_length_m: float | None = None
     standard_pole_length_cm: float | None = None
-    segments: dict = field(default_factory=dict)  # optional measured segment lengths (m)
+    segments: dict = field(default_factory=dict)  # measured segment lengths, keys in SEGMENT_FIELDS (m)
     notes: str = ""
 
     def validate(self) -> None:
@@ -53,6 +62,9 @@ class Participant:
             raise ValueError("Body mass must be between 20 and 250 kg.")
         if not (1.0 <= self.height_m <= 2.5):
             raise ValueError("Height must be between 1.0 and 2.5 m.")
+        for k, v in self.segments.items():
+            if k in SEGMENT_FIELDS and v is not None and not (0.03 <= v <= 0.4 * self.height_m):
+                raise ValueError(f"{SEGMENT_FIELDS[k][0]} of {v} m is not plausible for a height of {self.height_m} m.")
 
 
 @dataclass

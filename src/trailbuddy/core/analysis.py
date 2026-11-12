@@ -76,7 +76,7 @@ def _peak(y: np.ndarray, mask: np.ndarray | None = None) -> float | None:
 
 def analyse(pose: PoseSeries, body_mass: float, height_m: float, settings: AnalysisSettings,
             uses_poles: bool = False, poles: dict[str, PoleTrack] | None = None,
-            forces: ForceData | None = None) -> TrialResult:
+            forces: ForceData | None = None, segments: dict | None = None) -> TrialResult:
     s = settings
     notes: list[str] = []
     poles = poles or {}
@@ -87,9 +87,14 @@ def analyse(pose: PoseSeries, body_mass: float, height_m: float, settings: Analy
         scale = s.scale_m_per_px
         notes.append("Scale from a measured calibration distance in the scene.")
     elif s.scale_method == "height":
-        scale = kmod.scale_from_height(pose, height_m)
-        notes.append("Scale estimated from body height and Winter leg-segment proportions "
-                     "(approximate, +-5-10%). A measured distance in the scene is more accurate.")
+        seg = segments or {}
+        scale = kmod.scale_from_height(pose, height_m, thigh_m=seg.get("thigh_m"), shank_m=seg.get("shank_m"))
+        if seg.get("thigh_m") and seg.get("shank_m"):
+            notes.append("Scale from the participant's measured thigh + shank length (approximate: depends on "
+                         "how well hip/knee/ankle landmarks match the tape-measure landmarks).")
+        else:
+            notes.append("Scale estimated from body height and Winter leg-segment proportions "
+                         "(approximate, +-5-10%). Measured segment lengths or a distance in the scene is better.")
     else:
         notes.append("No scale: distances in pixels; speed and all kinetics are unavailable.")
     kin = kmod.compute(pose, scale, s.cutoff_hz, s.max_gap_s, s.min_visibility)
@@ -315,6 +320,12 @@ def analyse(pose: PoseSeries, body_mass: float, height_m: float, settings: Analy
     events = events.sort_values("start_s").reset_index(drop=True)
 
     quality = dict(kin.quality)
+    seg = segments or {}
+    if scale and seg.get("thigh_m") and seg.get("shank_m"):
+        th = np.nanmedian(np.linalg.norm(kin.get(side, "hip") - kin.get(side, "knee"), axis=1))
+        sh = np.nanmedian(np.linalg.norm(kin.get(side, "knee") - kin.get(side, "ankle"), axis=1))
+        quality["thigh_shank_ratio_video"] = float(th / sh)
+        quality["thigh_shank_ratio_measured"] = float(seg["thigh_m"] / seg["shank_m"])
     quality["scale_m_per_px"] = scale
     quality["analysed_side"] = side
     quality["n_frames"] = n

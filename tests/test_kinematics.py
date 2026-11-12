@@ -90,3 +90,12 @@ def test_gait_events_match_truth(synth):
             assert abs(c.start_s - a) < 0.06
             assert abs(c.end_s - b) < 0.06
     assert gait.cadence_steps_per_min() == pytest.approx(60 / 0.8, rel=0.08)
+
+
+def test_scale_from_measured_segments_overrides_height():
+    pose, truth = synthetic_descent(duration=2.0, height_m=1.75)
+    th, sh = 0.245 * 1.75, 0.246 * 1.75  # true synthetic segment lengths
+    # a wrong height is ignored when measured thigh + shank are supplied
+    s = km.scale_from_height(pose, 1.50, thigh_m=th, shank_m=sh)
+    assert s == pytest.approx(truth.scale_m_per_px, rel=0.02)
+    assert km.scale_from_height(pose, 1.50) == pytest.approx(truth.scale_m_per_px * 1.5 / 1.75, rel=0.02)

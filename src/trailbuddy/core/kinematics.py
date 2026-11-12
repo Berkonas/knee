@@ -84,11 +84,13 @@ def walking_direction(pose: PoseSeries) -> int:
     return 1 if hips[ok][-1] >= hips[ok][0] else -1
 
 
-def scale_from_height(pose: PoseSeries, height_m: float, side: str | None = None) -> float:
-    """Approximate metres-per-pixel from thigh+shank pixel length (Winter fractions).
+def scale_from_height(pose: PoseSeries, height_m: float, side: str | None = None,
+                      thigh_m: float | None = None, shank_m: float | None = None) -> float:
+    """Approximate metres-per-pixel from thigh+shank pixel length.
 
-    Uses the median over frames, so it tolerates some tracking noise. Less accurate than a
-    calibration distance measured in the scene; the UI labels it as approximate.
+    Real length = measured thigh + shank (tape measure) when both are given, otherwise
+    height x Winter fractions (0.245 + 0.246). Uses the median over frames, so it tolerates some
+    tracking noise. Less accurate than a calibration distance measured in the scene.
     """
     vals = []
     for s in (SIDES if side is None else (side,)):
@@ -98,7 +100,8 @@ def scale_from_height(pose: PoseSeries, height_m: float, side: str | None = None
     lpx = np.nanmedian(np.concatenate(vals))
     if not np.isfinite(lpx) or lpx <= 0:
         raise ValueError("Cannot estimate scale: legs not detected.")
-    return height_m * (THIGH_FRAC + SHANK_FRAC) / lpx
+    real = (thigh_m + shank_m) if (thigh_m and shank_m) else height_m * (THIGH_FRAC + SHANK_FRAC)
+    return real / lpx
 
 
 def scale_from_points(p1: tuple[float, float], p2: tuple[float, float], distance_m: float) -> float:

@@ -207,6 +207,10 @@ class SinglePage(QWidget):
         self.trial_info = QLabel("")
         self.trial_info.setObjectName("muted")
         row.addWidget(self.trial_info, 1)
+        self.btn_body = QPushButton("Body metrics…")
+        self.btn_body.setToolTip("Weight, height and segment lengths used by the calculations")
+        self.btn_body.clicked.connect(self.edit_body)
+        row.addWidget(self.btn_body)
         lay.addLayout(row)
 
         split = QSplitter(Qt.Orientation.Horizontal)
@@ -294,7 +298,7 @@ class SinglePage(QWidget):
             self.trial_combo.setCurrentIndex(i)
 
     def _set_enabled(self, on: bool):
-        for w in (self.btn_run, self.btn_folder, self.btn_clip, self.btn_overlay, self.form, self.poles):
+        for w in (self.btn_run, self.btn_folder, self.btn_clip, self.btn_overlay, self.form, self.poles, self.btn_body):
             w.setEnabled(on)
 
     def _trial_selected(self, *_):
@@ -303,10 +307,7 @@ class SinglePage(QWidget):
         if not tid or not p:
             return
         self.trial = p.trial(tid)
-        cond = p.condition(self.trial.condition_code)
-        part = p.participant(self.trial.participant_id)
-        self.trial_info.setText(f"{cond.label} · pole {self.trial.pole_length_cm or '–'} cm · "
-                                f"{part.body_mass_kg:g} kg, {part.height_m:g} m")
+        self._show_info()
         self._set_enabled(True)
         self.form.load_from(self.trial)
         folder = p.trial_dir(self.trial.id)
@@ -316,6 +317,34 @@ class SinglePage(QWidget):
             self.player.set_interval_s(*self.trial.interval)
         self.pose_overlay = None
         self._load_existing_result(folder)
+
+    def _show_info(self):
+        p = self.state.project
+        cond = p.condition(self.trial.condition_code)
+        part = p.participant(self.trial.participant_id)
+        self.trial_info.setText(f"{cond.label} · pole {self.trial.pole_length_cm or '–'} cm · {part.id}: "
+                                f"{part.body_mass_kg:g} kg, {part.height_m:g} m, "
+                                f"{len(part.segments)} segment lengths measured")
+
+    def edit_body(self):
+        from .project_page import ParticipantDialog
+        if not self.trial:
+            return
+        part = self.state.project.participant(self.trial.participant_id)
+        dlg = ParticipantDialog(self, part)
+        if dlg.exec():
+            v = dlg.value()
+            try:
+                v.validate()
+            except ValueError as e:
+                error_box(self, "Check body metrics", str(e))
+                return
+            part.body_mass_kg, part.height_m, part.leg_length_m = v.body_mass_kg, v.height_m, v.leg_length_m
+            part.standard_pole_length_cm, part.segments, part.notes = v.standard_pole_length_cm, v.segments, v.notes
+            self.state.save()
+            self.state.trialsChanged.emit()
+            self._show_info()
+            self.state.status.emit("Body metrics saved. Run the analysis again to use them.")
 
     def load_videos(self):
         v = self.trial.videos[0].path

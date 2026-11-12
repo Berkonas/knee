@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, 
                                QVBoxLayout, QWidget)
 from PySide6.QtCore import Qt
 
-from ..core.project import EXPERIMENTS, CameraVideo, Condition, Participant, Project, Trial, parse_filename
+from ..core.project import EXPERIMENTS, SEGMENT_FIELDS, CameraVideo, Condition, Participant, Project, Trial, parse_filename
 from .widgets import error_box, page_header, section
 
 VIDEO_FILTER = "Videos (*.mp4 *.mov *.MOV *.MP4 *.avi *.m4v *.mkv)"
@@ -37,23 +37,46 @@ def fill(t: QTableWidget, rows):
 
 
 class ParticipantDialog(QDialog):
+    """Body metrics. Required: mass and height. Optional tape-measure lengths improve the scale estimate."""
+
     def __init__(self, parent, p: Participant | None = None):
         super().__init__(parent)
-        self.setWindowTitle("Participant")
+        self.setWindowTitle("Body metrics")
+        self.setMinimumWidth(460)
+        self.setMinimumHeight(600)
         f = QFormLayout(self)
+        intro = QLabel("Mass and height are required. The optional lengths below make the video scale and "
+                       "segment geometry specific to this person instead of textbook proportions.")
+        intro.setWordWrap(True); intro.setObjectName("muted")
+        f.addRow(intro)
         self.pid = QLineEdit(p.id if p else "")
         self.pid.setPlaceholderText("P01 (code only, no names)")
-        self.mass = QDoubleSpinBox(); self.mass.setRange(20, 250); self.mass.setSuffix(" kg"); self.mass.setValue(p.body_mass_kg if p else 70)
-        self.height = QDoubleSpinBox(); self.height.setRange(1, 2.5); self.height.setDecimals(3); self.height.setSuffix(" m"); self.height.setValue(p.height_m if p else 1.75)
-        self.leg = QDoubleSpinBox(); self.leg.setRange(0, 1.5); self.leg.setDecimals(3); self.leg.setSuffix(" m"); self.leg.setSpecialValueText("not measured"); self.leg.setValue(p.leg_length_m or 0 if p else 0)
-        self.pole = QDoubleSpinBox(); self.pole.setRange(0, 160); self.pole.setDecimals(1); self.pole.setSuffix(" cm"); self.pole.setSpecialValueText("not set"); self.pole.setValue(p.standard_pole_length_cm or 0 if p else 0)
-        self.pole.setToolTip("Standard length: ~90° elbow angle with the tip on level ground.")
-        self.notes = QLineEdit(p.notes if p else "")
+        def dsb(lo, hi, dec, suf, val, special=None, tip=""):
+            w = QDoubleSpinBox(); w.setRange(lo, hi); w.setDecimals(dec); w.setSuffix(suf)
+            if special:
+                w.setSpecialValueText(special)
+            w.setValue(val); w.setToolTip(tip)
+            return w
+        self.mass = dsb(20, 250, 1, " kg", p.body_mass_kg if p else 70, tip="Measured on a scale, with shoes")
+        self.height = dsb(1, 2.5, 3, " m", p.height_m if p else 1.75, tip="Standing height, with shoes")
+        self.leg = dsb(0, 1.5, 3, " m", (p.leg_length_m or 0) if p else 0, "not measured",
+                       "Greater trochanter to the floor")
+        self.pole = dsb(0, 160, 1, " cm", (p.standard_pole_length_cm or 0) if p else 0, "not set",
+                        "Standard length: about 90° elbow angle with the tip on level ground")
         f.addRow("Participant ID", self.pid)
         f.addRow("Body mass", self.mass)
         f.addRow("Height", self.height)
-        f.addRow("Leg length", self.leg)
         f.addRow("Standard pole length", self.pole)
+        f.addRow(section("Optional segment lengths"))
+        f.addRow("Leg length", self.leg)
+        self.seg = {}
+        segs = p.segments if p else {}
+        for key, (label, how) in SEGMENT_FIELDS.items():
+            w = dsb(0, 1.0, 3, " m", segs.get(key) or 0, "not measured", how)
+            self.seg[key] = w
+            f.addRow(label, w)
+        self.notes = QLineEdit(p.notes if p else "")
+        self.notes.setPlaceholderText("e.g. shoe type, preferred lead foot")
         f.addRow("Notes", self.notes)
         if p:
             self.pid.setEnabled(False)
@@ -63,8 +86,9 @@ class ParticipantDialog(QDialog):
         f.addRow(bb)
 
     def value(self) -> Participant:
+        segs = {k: w.value() for k, w in self.seg.items() if w.value() > 0}
         return Participant(self.pid.text().strip(), self.mass.value(), self.height.value(),
-                           self.leg.value() or None, self.pole.value() or None, {}, self.notes.text())
+                           self.leg.value() or None, self.pole.value() or None, segs, self.notes.text())
 
 
 class TrialDialog(QDialog):
@@ -161,12 +185,12 @@ class ProjectPage(QWidget):
         # participants
         pw = QWidget(); pl = QVBoxLayout(pw); pl.setContentsMargins(0, 0, 0, 0)
         pl.addWidget(section("Participants"))
-        self.ptable = table(["ID", "Mass (kg)", "Height (m)", "Leg (m)", "Std pole (cm)", "Notes"])
+        self.ptable = table(["ID", "Mass (kg)", "Height (m)", "Std pole (cm)", "Segment lengths", "Notes"])
         self.ptable.doubleClicked.connect(self.edit_participant)
         pl.addWidget(self.ptable)
         r = QHBoxLayout()
         self.btn_padd = QPushButton("Add participant"); self.btn_padd.clicked.connect(self.add_participant)
-        self.btn_pedit = QPushButton("Edit"); self.btn_pedit.clicked.connect(self.edit_participant)
+        self.btn_pedit = QPushButton("Edit body metrics"); self.btn_pedit.clicked.connect(self.edit_participant)
         self.btn_pdel = QPushButton("Remove"); self.btn_pdel.clicked.connect(self.remove_participant)
         for b in (self.btn_padd, self.btn_pedit, self.btn_pdel):
             r.addWidget(b)
@@ -233,7 +257,8 @@ class ProjectPage(QWidget):
                 t.setRowCount(0)
             return
         self.info.setText(f"{p.name}  ·  {EXPERIMENTS.get(p.experiment, {}).get('name', p.experiment)}  ·  {p.root}")
-        fill(self.ptable, [(q.id, q.body_mass_kg, q.height_m, q.leg_length_m, q.standard_pole_length_cm, q.notes)
+        fill(self.ptable, [(q.id, q.body_mass_kg, q.height_m, q.standard_pole_length_cm,
+                            f"{len(q.segments)} of {len(SEGMENT_FIELDS)} measured", q.notes)
                            for q in p.participants])
         fill(self.ctable, [(c.code, c.label, "yes" if c.uses_poles else "no",
                             "" if c.pole_offset_cm is None else f"{c.pole_offset_cm:+g}") for c in p.conditions])
@@ -321,7 +346,8 @@ class ProjectPage(QWidget):
                 error_box(self, "Invalid participant", str(e))
                 return
             p.body_mass_kg, p.height_m, p.leg_length_m = v.body_mass_kg, v.height_m, v.leg_length_m
-            p.standard_pole_length_cm, p.notes = v.standard_pole_length_cm, v.notes
+            p.segments = v.segments
+            p.standard_pole_length_cm, p.notes, p.segments = v.standard_pole_length_cm, v.notes, v.segments
             self._changed()
 
     def remove_participant(self):

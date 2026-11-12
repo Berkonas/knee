@@ -103,7 +103,8 @@ def run_trial(project, trial, settings: AnalysisSettings, poles: dict[str, PoleT
     if trial.stair.get("step_height_m") and trial.stair.get("n_steps") and settings.descent_height_m is None:
         settings.descent_height_m = float(trial.stair["step_height_m"]) * int(trial.stair["n_steps"])
 
-    res = analysis.analyse(pa, part.body_mass_kg, part.height_m, settings, cond.uses_poles, poles, forces)
+    res = analysis.analyse(pa, part.body_mass_kg, part.height_m, settings, cond.uses_poles, poles, forces,
+                           part.segments)
 
     if two:
         vb = trial.videos[1].path

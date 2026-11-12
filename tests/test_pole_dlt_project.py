@@ -114,3 +114,19 @@ def test_parse_filename():
     assert parse_filename("P01_C1_T03.mp4") == ("P01", "C1", 3)
     assert parse_filename("p02_c0_t1_side.MOV") == ("P02", "C0", 1)
     assert parse_filename("holiday.mp4") is None
+
+
+def test_segment_metrics_validation_and_use(tmp_path):
+    with pytest.raises(ValueError, match="not plausible"):
+        Participant("P01", 70, 1.75, segments={"thigh_m": 1.2}).validate()
+    Participant("P01", 70, 1.75, segments={"thigh_m": 0.43, "shank_m": 0.43}).validate()
+
+
+def test_analysis_reports_measured_segment_consistency():
+    from trailbuddy.core import analysis
+    from trailbuddy.core.analysis import AnalysisSettings
+    p, _ = synthetic_descent(duration=3.0, height_m=1.75)
+    res = analysis.analyse(p, 70, 1.75, AnalysisSettings(side="right"),
+                           segments={"thigh_m": 0.245 * 1.75, "shank_m": 0.246 * 1.75})
+    assert res.quality["thigh_shank_ratio_video"] == pytest.approx(res.quality["thigh_shank_ratio_measured"], rel=0.02)
+    assert any("measured thigh + shank" in n for n in res.notes)

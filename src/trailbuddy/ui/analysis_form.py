@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox,
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (QCheckBox, QToolButton, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox,
                                QHBoxLayout, QLabel, QPushButton, QSpinBox, QVBoxLayout, QWidget)
 
 from ..core.analysis import MOMENT_ARM_NOMINAL_M, AnalysisSettings
@@ -30,7 +30,7 @@ class AnalysisForm(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
 
-        g = QGroupBox("Scale and tracking")
+        g = QGroupBox("Scale and side")
         f = QFormLayout(g)
         self.scale_method = QComboBox()
         self.scale_method.addItem("Measured distance in the scene (best)", "points")
@@ -54,6 +54,7 @@ class AnalysisForm(QWidget):
         self.scale_label.setObjectName("muted")
         f.addRow("", self.scale_label)
         self.scale_points: list[tuple[float, float]] = []
+        self.side_row_holder = f
         self.side = QComboBox()
         for lab, v in (("Automatic (side facing camera)", "auto"), ("Left leg/arm", "left"), ("Right leg/arm", "right")):
             self.side.addItem(lab, v)
@@ -62,9 +63,7 @@ class AnalysisForm(QWidget):
         for lab, v in (("Full (recommended)", "full"), ("Heavy (slower, most accurate)", "heavy"), ("Lite (fast)", "lite")):
             self.model.addItem(lab, v)
         self.model.setToolTip("MediaPipe Pose Landmarker model size.")
-        f.addRow("Pose model", self.model)
         self.cutoff = dspin(1, 30, 6, 0.5, 1, " Hz", "Low-pass cut-off for landmark trajectories (Winter: ~6 Hz for walking).")
-        f.addRow("Filter cut-off", self.cutoff)
         lay.addWidget(g)
 
         g = QGroupBox("Stairs")
@@ -78,8 +77,20 @@ class AnalysisForm(QWidget):
         f.addRow("Steps in interval", self.n_steps)
         lay.addWidget(g)
 
-        g = QGroupBox("Force model")
-        f = QFormLayout(g)
+        g = QGroupBox("External forces")
+        fp = QFormLayout(g)
+        lay.addWidget(g)
+        self.btn_adv = QToolButton()
+        self.btn_adv.setText("Show advanced settings")
+        self.btn_adv.setCheckable(True)
+        self.btn_adv.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.btn_adv.setArrowType(Qt.ArrowType.RightArrow)
+        self.btn_adv.setStyleSheet("QToolButton { border: none; color: #1F6F66; padding: 6px 0; }")
+        lay.addWidget(self.btn_adv)
+        self.adv = QGroupBox("Advanced")
+        f = QFormLayout(self.adv)
+        f.addRow("Pose model", self.model)
+        f.addRow("Filter cut-off", self.cutoff)
         self.support = QComboBox()
         self.support.addItem("Body weight (quasi-static)", "static")
         self.support.addItem("Body weight + COM acceleration (dynamic)", "dynamic")
@@ -95,9 +106,9 @@ class AnalysisForm(QWidget):
         self.pole_mode.addItem("Scenario: assumed pole force", "scenario")
         self.pole_mode.addItem("Measured (load-cell CSV)", "measured")
         self.pole_mode.setToolTip("Pole force cannot be seen in video. Choose an explicit assumption or import data.")
-        f.addRow("Pole force", self.pole_mode)
+        fp.addRow("Pole force", self.pole_mode)
         self.pole_pct = dspin(0, 50, 10, 1, 1, " % BW", "Axial force per planted pole as % of body weight (scenario).")
-        f.addRow("Scenario force", self.pole_pct)
+        fp.addRow("Assumed force", self.pole_pct)
         row = QHBoxLayout()
         self.btn_force = QPushButton("Import force CSV…")
         self.btn_force.setToolTip("Force plate / instrumented step / pole load cell. See docs/data-formats.md.")
@@ -106,18 +117,25 @@ class AnalysisForm(QWidget):
         self.btn_force_clear.clicked.connect(lambda: self.set_force_file(""))
         row.addWidget(self.btn_force)
         row.addWidget(self.btn_force_clear)
-        f.addRow("Measured forces", row)
+        fp.addRow("Force data", row)
         self.force_label = QLabel("None (video-only)")
         self.force_label.setObjectName("muted")
         self.force_label.setWordWrap(True)
-        f.addRow("", self.force_label)
+        fp.addRow("", self.force_label)
         self.force_offset = dspin(-600, 600, 0, 0.001, 3, " s", "t_video = t_force + offset")
         f.addRow("Force time offset", self.force_offset)
-        lay.addWidget(g)
+        lay.addWidget(self.adv)
+        self.adv.setVisible(False)
+        self.btn_adv.toggled.connect(self._toggle_adv)
         self.force_file = ""
         self.pole_mode.currentIndexChanged.connect(self._sync_enabled)
         self.scale_method.currentIndexChanged.connect(self._sync_enabled)
         self._sync_enabled()
+
+    def _toggle_adv(self, on):
+        self.adv.setVisible(on)
+        self.btn_adv.setText("Hide advanced settings" if on else "Show advanced settings")
+        self.btn_adv.setArrowType(Qt.ArrowType.DownArrow if on else Qt.ArrowType.RightArrow)
 
     def _sync_enabled(self):
         self.pole_pct.setEnabled(self.pole_mode.currentData() == "scenario")
