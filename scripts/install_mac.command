@@ -54,7 +54,7 @@ PLIST
 touch "$APP"
 
 echo "Adding an alias to your Desktop..."
-osascript >/dev/null <<OSA || echo "(Could not create the Desktop alias automatically; drag the app from ~/Applications instead.)"
+osascript >/dev/null <<OSA || { ln -sfn "$APP" "$HOME/Desktop/TrailBuddy Analyzer"; echo "(Finder alias not permitted; created a Desktop link instead.)"; }
 tell application "Finder"
   set appFile to POSIX file "$APP" as alias
   set deskFolder to path to desktop folder
