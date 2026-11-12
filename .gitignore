@@ -18,3 +18,6 @@ projects/
 *.MOV
 *.avi
 !tests/data/*.mp4
+# Local launcher app and logs created by scripts/install_mac.command
+*.app/
+logs/

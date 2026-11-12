@@ -129,6 +129,7 @@ class VideoPlayer(QWidget):
         self.mark_in: int | None = None
         self.mark_out: int | None = None
         self.overlay: Callable[[np.ndarray, int], np.ndarray] | None = None
+        self.label = label
         self.view = FrameView()
         self.title = QLabel(label)
         self.title.setObjectName("muted")
@@ -139,10 +140,10 @@ class VideoPlayer(QWidget):
         self.btn_play.setCheckable(True)
         self.btn_play.setToolTip("Play / pause (Space)")
         self.btn_play.toggled.connect(self._toggle)
-        self.btn_prev = QPushButton("◀ Frame")
+        self.btn_prev = QPushButton("◀")
         self.btn_prev.setToolTip("Previous frame")
         self.btn_prev.clicked.connect(lambda: self.seek(self.index - 1))
-        self.btn_next = QPushButton("Frame ▶")
+        self.btn_next = QPushButton("▶")
         self.btn_next.setToolTip("Next frame")
         self.btn_next.clicked.connect(lambda: self.seek(self.index + 1))
         self.btn_in = QPushButton("Set start")
@@ -170,10 +171,13 @@ class VideoPlayer(QWidget):
             row.addWidget(b)
         row.addWidget(self.pos_label)
         row.addStretch(1)
-        row.addWidget(self.btn_in)
-        row.addWidget(self.btn_out)
         lay.addLayout(row)
-        lay.addWidget(self.range_label)
+        row2 = QHBoxLayout()
+        row2.addWidget(self.range_label)
+        row2.addStretch(1)
+        row2.addWidget(self.btn_in)
+        row2.addWidget(self.btn_out)
+        lay.addLayout(row2)
 
     # ---------------------------------------------------------------------------------------
     def load(self, path: str) -> bool:
@@ -193,7 +197,7 @@ class VideoPlayer(QWidget):
         self.slider.setEnabled(True)
         for b in (self.btn_play, self.btn_prev, self.btn_next, self.btn_in, self.btn_out):
             b.setEnabled(True)
-        self.title.setText(f"{r.info.name}  ({r.info.width}×{r.info.height}, {r.info.fps:.2f} fps, "
+        self.title.setText(f"{self.label + ' – ' if self.label else ''}{r.info.name}  ({r.info.width}×{r.info.height}, {r.info.fps:.2f} fps, "
                            f"{r.info.duration:.2f} s{', audio' if r.info.has_audio else ', no audio'})")
         self.index = -1
         self.seek(0)
@@ -228,7 +232,7 @@ class VideoPlayer(QWidget):
         self.slider.blockSignals(True)
         self.slider.setValue(i)
         self.slider.blockSignals(False)
-        self.pos_label.setText(f"Frame {i}  ·  {i / self.fps:.3f} s")
+        self.pos_label.setText(f"Frame {i} · {i / self.fps:.3f} s")
         self.frameChanged.emit(i)
 
     def refresh(self) -> None:
@@ -316,9 +320,15 @@ def start_worker(parent, worker: Worker) -> QThread:
     return th
 
 
-def draw_painter_text(img: np.ndarray, text: str, org=(12, 28)) -> np.ndarray:
-    cv2.putText(img, text, org, cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 3, cv2.LINE_AA)
-    cv2.putText(img, text, org, cv2.FONT_HERSHEY_SIMPLEX, 0.7, (30, 30, 30), 1, cv2.LINE_AA)
+def draw_painter_text(img: np.ndarray, text: str, org=None, scale: float = 1.0) -> np.ndarray:
+    """Readable label (white halo, dark text) sized relative to the frame."""
+    fs = max(0.5, 0.9 * scale)
+    th = max(1, int(round(2 * scale)))
+    (tw, tht), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, fs, th)
+    org = org or (int(16 * scale), img.shape[0] - int(20 * scale))
+    x, y = org
+    cv2.rectangle(img, (x - 8, y - tht - 10), (x + tw + 8, y + 10), (255, 255, 255), -1)
+    cv2.putText(img, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX, fs, (40, 48, 47), th, cv2.LINE_AA)
     return img
 
 

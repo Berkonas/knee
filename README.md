@@ -29,7 +29,7 @@ You need about 2 GB of free disk space and internet for the first install.
 2. Double-click **`install_mac.command`**. If macOS says it can't be opened, right-click it, choose **Open**,
    then click **Open** again. This happens only once.
 3. Wait a few minutes. The script asks before installing *uv*, the Python installer it uses.
-4. **TrailBuddy Analyzer** now appears on your Desktop and in `~/Applications`. Double-click it to start.
+4. **TrailBuddy Analyzer** now appears on your Desktop (the app itself lives inside this folder). Double-click it to start.
    You don't need a terminal after this.
 
 ### Windows 10/11

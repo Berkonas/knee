@@ -23,13 +23,18 @@ class TwoPage(SinglePage):
         self.clap_a = None
         self.clap_b = None
         super().__init__(state)
-        self.player_b = VideoPlayer()
+        self.player_b = VideoPlayer("Camera B")
         self.player_b.btn_in.setVisible(False)
         self.player_b.btn_out.setVisible(False)
         self.player_b.range_label.setVisible(False)
-        # put B under A, sharing the video area
-        self.vsplit.insertWidget(1, self.player_b)
-        self.vsplit.setSizes([300, 300, 320])
+        # Side-by-side preview: A (side view) left, B right; results below.
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QSplitter
+        self.hsplit = QSplitter(Qt.Orientation.Horizontal)
+        self.hsplit.addWidget(self.player)
+        self.hsplit.addWidget(self.player_b)
+        self.vsplit.insertWidget(0, self.hsplit)
+        self.vsplit.setSizes([400, 380])
         self.player.frameChanged.connect(self._follow_a)
         if self.trial is not None:
             self._trial_selected()
@@ -99,7 +104,7 @@ class TwoPage(SinglePage):
             error_box(self, "Video not found", vb)
             return
         self.player_b.load(vb)
-        self.player_b.title.setText(f"Camera B ({self.trial.videos[1].role}) – {self.player_b.title.text()}")
+        self.player_b.title.setText(self.player_b.title.text().replace("Camera B", f"Camera B ({self.trial.videos[1].role})", 1))
         self.offset.blockSignals(True)
         self.offset.setValue(float(self.trial.sync.get("offset_s", 0.0)))
         self.offset.blockSignals(False)

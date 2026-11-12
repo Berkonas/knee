@@ -1,8 +1,8 @@
 #!/bin/bash
 # TrailBuddy Analyzer - macOS setup. Double-click this file in Finder (or run it in Terminal).
 # It installs the Python environment inside this folder (.venv), downloads the pose model into ./models,
-# creates "TrailBuddy Analyzer.app" in ~/Applications and puts an alias on your Desktop.
-# Nothing else on your computer is changed.
+# creates "TrailBuddy Analyzer.app" inside this folder and puts an alias to it on your Desktop.
+# Everything stays inside this folder; the only thing outside it is the Desktop alias.
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO"
@@ -25,14 +25,15 @@ echo "Installing Python packages (first run takes a few minutes)..."
 echo "Downloading the pose model (about 9 MB, once)..."
 "$UV" run python -c "from trailbuddy.core.pose import model_path; print(model_path('full'))"
 
-APP="$HOME/Applications/TrailBuddy Analyzer.app"
+APP="$REPO/TrailBuddy Analyzer.app"
+mkdir -p "$REPO/logs"
 echo "Creating $APP ..."
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$REPO/assets/icon.icns" "$APP/Contents/Resources/icon.icns"
 cat > "$APP/Contents/MacOS/TrailBuddy" <<LAUNCH
 #!/bin/bash
 cd "$REPO"
-exec "$REPO/.venv/bin/python" -m trailbuddy "\$@" >> "\$HOME/Library/Logs/TrailBuddyAnalyzer.log" 2>&1
+exec "$REPO/.venv/bin/python" -m trailbuddy "\$@" >> "$REPO/logs/app.log" 2>&1
 LAUNCH
 chmod +x "$APP/Contents/MacOS/TrailBuddy"
 cat > "$APP/Contents/Info.plist" <<PLIST

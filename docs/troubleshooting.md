@@ -7,7 +7,7 @@
 | macOS on an Intel Mac | MediaPipe no longer ships Intel-Mac builds. Use an Apple-silicon Mac or Windows. |
 | Windows SmartScreen blocks the script or app | Click **More info → Run anyway**. |
 | "uv: command not found" | Re-run the install script and answer **y**, or install uv from https://docs.astral.sh/uv/. |
-| The app doesn't start from the Desktop icon | macOS: check `~/Library/Logs/TrailBuddyAnalyzer.log`. If you moved the folder, re-run the install script. |
+| The app doesn't start from the Desktop icon | macOS: check `logs/app.log (in the TrailBuddy folder)`. If you moved the folder, re-run the install script. |
 | "Could not download the pose model" | Internet is needed once. You can also download `pose_landmarker_full.task` from the URL in the message into the `models` folder. |
 | "A person was detected in only X% of frames" | Keep the whole body in frame, improve lighting, shorten the interval to the descent, or try the *Heavy* pose model under **Show advanced settings**. |
 | Knee angles jump or flip | The far leg may have been mistaken for the near leg. Set **Analysed side** to the leg facing the camera. Check the overlay. |

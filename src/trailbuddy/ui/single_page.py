@@ -216,7 +216,7 @@ class SinglePage(QWidget):
         split = QSplitter(Qt.Orientation.Horizontal)
         left = QWidget(); ll = QVBoxLayout(left); ll.setContentsMargins(0, 0, 0, 0)
         self.vsplit = QSplitter(Qt.Orientation.Vertical)
-        self.player = VideoPlayer()
+        self.player = VideoPlayer("Camera A")
         self.player.overlay = self._draw_overlay
         self.player.view.clicked.connect(self._clicked)
         self.vsplit.addWidget(self.player)
@@ -381,7 +381,8 @@ class SinglePage(QWidget):
                     ts = res.timeseries
                     j = int(np.argmin(np.abs(ts.time_s.to_numpy() - i / self.player.fps)))
                     if col in ts and np.isfinite(ts[col].iloc[j]):
-                        draw_painter_text(img, f"{res.side} knee flexion {ts[col].iloc[j]:.0f} deg (2D)")
+                        draw_painter_text(img, f"{res.side} knee flexion {ts[col].iloc[j]:.0f} deg (2D)",
+                                          scale=img.shape[0] / 720)
         for p in self.form.scale_points:
             cv2.drawMarker(img, (int(p[0]), int(p[1])), (40, 200, 255), cv2.MARKER_TILTED_CROSS, 18, 2)
         return self.poles.draw(img, i)

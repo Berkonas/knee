@@ -36,7 +36,11 @@ class MetricTable(QTableWidget):
         self.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         h = self.horizontalHeader()
         h.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        h.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
         h.setStretchLastSection(True)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setWordWrap(False)
+        self.setColumnWidth(0, 260)
 
     def show_metrics(self, metrics):
         self.setRowCount(len(metrics))
@@ -46,6 +50,8 @@ class MetricTable(QTableWidget):
             vals = [info.label, fmt(m.value), rng, fmt(m.sd), info.unit, KINDS[m.kind], m.note]
             for c, v in enumerate(vals):
                 it = QTableWidgetItem(v)
+                if c == 6 and v:
+                    it.setToolTip(v)
                 if c == 0:
                     it.setToolTip(f"<b>{info.label}</b><br><b>What:</b> {info.what}<br><b>Why:</b> {info.why}"
                                   f"<br><b>Can conclude:</b> {info.conclude}<br><b>Cannot conclude:</b> {info.not_conclude}")
