@@ -1,6 +1,6 @@
 [project]
 name = "trailbuddy-analyzer"
-version = "2.1.0"
+version = "3.0.0"
 description = "Video-based biomechanics analysis of stair/downhill descent with and without trekking poles (TrailBuddy class project)."
 readme = "README.md"
 requires-python = ">=3.10,<3.13"

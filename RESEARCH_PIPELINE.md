@@ -63,11 +63,27 @@ knees on loose, light-coloured trousers, while RTMPose found the knees, heels an
      frame in our trials.
    * Different frame rates are handled by mapping both cameras to one clock in seconds.
 4. **Person and pose tracking.**
-   * YOLOX detects every person in a frame, and RTMPose estimates 26 keypoints with a confidence for each.
-   * The participant is locked as the largest, most confident person in the first frames. In later frames the app
-     follows the detection whose hip centre and size are closest to the previous frame, which rejects people walking
-     behind the stairs.
-   * If the target is lost, the frame is left empty.
+   * YOLOX-m finds the participant: the largest, most confident person in the first frames.
+   * From then on each frame is cropped around the previous frame's skeleton (enlarged 25%) and RTMPose-x
+     (384×288 input, Halpe-26 keypoints) runs on that crop. The detector runs again when the tracked skeleton's mean
+     confidence falls below 0.45 or its height changes by more than 35%. In that case the app picks the detection
+     whose hip centre and size are closest to the previous frame, which rejects people walking behind the stairs.
+   * Why: re-detecting every frame made the crop box wobble, and that wobble showed up as keypoint jitter. On four
+     real recordings, 3 s of descent each, high-frequency leg-keypoint noise (residual above a 6 Hz low-pass) was:
+
+     | Recording | Old (RTMPose-m, detector every frame) | New (RTMPose-x, tracked crop) |
+     |---|---|---|
+     | P01 side | 2.36 px | 1.11 px (−53%) |
+     | P02 side | 2.13 px | 0.65 px (−70%) |
+     | P03 side | 3.61 px | 1.24 px (−66%) |
+     | P02 front | 1.83 px | 1.42 px (−22%) |
+
+     The new tracker also ran faster: 16–19 vs 8–11 frames/s on an Apple-silicon CPU.
+   * If the target is lost, the frame is left empty. Nothing is invented.
+   * **Display only:** the skeleton drawn on the video can be smoothed. The app applies a zero-lag 8 Hz filter and
+     hides points that make a segment implausibly long or short. A One Euro filter (Casiez et al. 2012) was
+     evaluated for this and rejected: it is designed for live input, and offline it left 1.5–3 px error on test
+     movements versus 1 px for the zero-lag filter. Measurements never use the display filter.
 5. **Pole tracking.**
    * For each hand, pole-coloured pixels (HSV) outside the torso are searched below the wrist.
    * Straight segments are found with the probabilistic Hough transform.
@@ -75,7 +91,13 @@ knees on loose, light-coloured trousers, while RTMPose found the knees, heels an
      * it lies on a line passing within 0.07 body heights of the wrist
      * it starts at the hand and does not continue above it, which rejects handrails and curtain folds
      * it points within 40° of vertical
-   * The tip is the lower end of the longest kept segment.
+   * The coloured shaft ends above a short dark rubber tip and ferrule, which is hard to see against the black
+     stairs. The reported tip therefore extends the hand-to-shaft-end line by 7.1%. That fraction is the median from
+     12 hand-labelled tips (IQR 6.6–7.6%).
+   * Tip error against the 16 hand labels through the full pipeline: median 14 px, 90th percentile 26 px. With
+     each frame left out of the calibration in turn the median is 12 px. Before this change it was median 30 px.
+     13 of 16 tips were found and none were on the wrong object. The labels are in
+     `docs/validation/manual_pole_tips.json`.
    * Detections are removed if they jump in angle or position between frames, or last fewer than five frames.
    * Users can override any frame with a manual click.
 6. **Signal conditioning.**
@@ -84,8 +106,20 @@ knees on loose, light-coloured trousers, while RTMPose found the knees, heels an
      than 8% of leg length.
    * Gaps of 0.1 s or less are filled linearly and flagged. Longer gaps stay missing.
    * Trajectories are low-pass filtered with a zero-lag 2nd-order Butterworth filter at 6 Hz [4].
-7. **Biomechanical calculations.** Details are in the table below and in `docs/methods.md`.
-8. **Export.** For each trial the app writes the time-series CSV, a summary table with evidence label and camera
+7. **Events, technique and segments.**
+   * Foot strike and toe-off are the start and end of each foot contact. Contacts already under way at the clip
+     edges give no event.
+   * Single- and double-support time come from the two feet's contacts.
+   * Pole technique is classified from the pole-tip contacts: *alternating*, *simultaneous* (plants within 0.15 s of
+     each other in at least 70% of cases), *single pole* or *mixed*. Each plant is timed against the nearest foot
+     strike: early, within ±0.1 s, or late. Steps without a pole plant within 0.35 s are counted.
+   * Every classification carries a confidence (number of plants × pole tracking coverage). Pole dragging is not
+     assessed.
+   * Candidate movement segments are periods of whole-body movement (mid-hip speed above 0.25 leg lengths/s, pauses
+     under 0.6 s bridged), labelled descent, ascent or level by the change in hip height. They are stored as
+     timestamps and the videos are never cut.
+8. **Biomechanical calculations.** Details are in the table below and in `docs/calculation-audit.md`.
+9. **Export.** For each trial the app writes the time-series CSV, a summary table with evidence label and camera
    view, events, figures, an annotated video and a JSON file of all processing settings. For the study it writes
    within-participant comparison tables, an Excel workbook and figures.
 
@@ -109,8 +143,14 @@ knees on loose, light-coloured trousers, while RTMPose found the knees, heels an
 
 ## Estimated loading: exact equations
 
-Estimated loads are calculated only after a participant's **measured** body mass *m* (kg) and height *h* (m) are
-entered in *Body metrics…*. Until then every force, moment, power, impulse and work value is shown as
+**Analysis modes.**
+* **A, video only** (default): angles, timing and pole geometry. No force or moment is estimated.
+* **B, scenario:** loads from the stated assumptions below, labelled *scenario*.
+* **C, measured:** loads from imported force-plate, insole or pole load-cell data. A quasi-static calculation is
+  never shown as inverse dynamics, and mode C never falls back to scenario values.
+
+Estimated loads are calculated only after a participant's **measured** body mass *m* (kg) is entered in
+*Participant information…*. Height, measured segment lengths or a calibrated scene distance give the scale. Until then every force, moment, power, impulse and work value is shown as
 *unavailable*, and the matching columns are left out of the time series and exports. No default mass or height is
 ever used. All quantities are SI: N, N·m, W, J and s; normalised values are per kg of body mass.
 
@@ -160,7 +200,9 @@ M_p = I·α − M_d − r_p × F_p − r_d × F_d.
 
 **Sensitivity.** For every scenario trial the app recomputes the peak moment, quadriceps force and impulse over a
 grid: support model (static, dynamic) × force direction (toward COM, vertical) × c ∈ {0.25, 0.5, 0.75} ×
-r ∈ {4, 5, 6} cm. The reported range is the grid's minimum to maximum.
+pole force (0.5, 1 and 1.5 × the assumed value) × r ∈ {4, 5, 6} cm. The reported range is the grid's minimum to
+maximum. Elbow and shoulder moments are recomputed at 0.5 and 1.5 × the pole force. Knee and arm models always use
+the **same** pole force, so the modelled transfer of load from the legs to the arms is consistent.
 
 **Physical consistency checks (automated tests).**
 * Moments scale linearly with body mass, and scale-free angles are unchanged.
@@ -170,11 +212,16 @@ r ∈ {4, 5, 6} cm. The reported range is the grid's minimum to maximum.
 * Static inverse dynamics matches a hand calculation, and a swinging pendulum matches I·α plus the gravity term.
 * Without measured body metrics, every kinetic output is blocked.
 
-**Check on real data.** On P01 trial 1 with test values of 75 kg and 1.75 m, the peak knee extensor moment was
-2.87 N·m/kg with a vertical force and 1.82 N·m/kg with the force toward the COM (1.50 at c = 0.75). Published
-stair-descent values are 1.0–1.6 N·m/kg [10]. The vertical model overestimates, which is why the COM direction is
-the default. Remaining reasons for a higher estimate: the quasi-static support ignores segment inertia, and the 2D
-projection misplaces the COP.
+**Check on real data.** These numbers use labelled test values (75 kg, 1.75 m) on a copy of the study, because
+real body metrics are not entered yet.
+* P01 trial 1, version 2.1 tracker, no pole force: 2.87 N·m/kg with a vertical force; 1.82 with the force toward
+  the COM; 1.50 at c = 0.75.
+* Same trial, version 3 tracker, 10% body weight per pole: 1.42 N·m/kg (sensitivity range 1.04–3.27). Peak shoulder
+  moment 18 N·m (8–29).
+
+Published stair-descent values are 1.0–1.6 N·m/kg [10]. The vertical model overestimates, which is why the COM
+direction is the default. Other reasons an estimate can be high: the quasi-static support ignores segment inertia,
+and the 2D projection misplaces the COP.
 
 ## Validation and limitations
 

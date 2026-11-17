@@ -10,11 +10,13 @@ joint angles and estimates knee extensor moment, quadriceps force and arm moment
 *measured*, *video estimate*, *model estimate*, *scenario (assumed force)* or *unavailable*, so you always know how
 much to trust it.
 
-> **Status (v2.1).** Tested on every recording of our 2026-11-16 session (see
-> [the validation report](docs/VALIDATION_REPORT.md)) and by 94 automated tests on macOS, Windows and Linux.
-> Estimated loads (moments, muscle force, power) are calculated **only after you enter each participant's measured
-> mass and height**. Before that they show as *unavailable*. The equations are in
-> [RESEARCH_PIPELINE.md](RESEARCH_PIPELINE.md#estimated-loading-exact-equations).
+> **Status (v3.0).**
+> * Tested on every recording of our 2026-11-16 session (see [the validation report](docs/VALIDATION_REPORT.md))
+>   and by automated tests on macOS, Windows and Linux.
+> * Loads have three modes: **A** video only (default, no forces), **B** scenario (stated assumptions) and **C**
+>   measured forces.
+> * Loads need each participant's **measured body mass**. Nothing is calculated from default values.
+> * Every output is traced to its equation in [the calculation audit](docs/calculation-audit.md).
 
 ---
 
@@ -62,23 +64,37 @@ on real recordings without the interface, run the app with `--acceptance <videos
    * **pairs** front and side recordings of the same trial by matching their sound
 
    Check the review table, fix anything wrong, then click **Create trials**. File names don't matter.
-3. Enter each participant's **body metrics**: right-click the participant, then **Body metrics…**. Mass and height are
-   needed for every force or moment.
+3. Enter each participant's information: right-click the participant, then **Participant information…**.
+   * Required for loads: mass (all forces and moments) and height (or a calibrated distance, for metres).
+   * Optional: segment lengths, leg dominance, footwear and similar.
+   * The **Study** page lists what is still missing.
 4. Click a trial in the browser. The front and side videos play **in sync** from one clock. Use Space, ← and →
    (Shift for 10 frames), and the speed menu (0.1×–2×).
 5. **Sync** tab: **Audio clap** aligns the views automatically. Check that both views show the hands meeting.
    **Visual clap** works without audio, and the ±1 frame buttons give frame-exact manual control.
-6. **Trial** tab: set the condition (no poles, standard, −5 cm, +5 cm…), the trial number and the analysis interval. Press
-   I and O at the cursor to set the start and end.
-7. **Analyse trial**, or **Analyse all trials**. The app tracks the body (RTMPose) and both poles in both views.
+6. **Trial** tab:
+   * Set the condition (no poles, standard, −5 cm, +5 cm…), the trial number and the analysis interval.
+   * Press I and O at the cursor to set the start and end, or double-click a **detected movement segment**.
+   * Right-click a trial in the browser for:
+     * details (task, stairs, grip, force data)
+     * duplicate, re-analyse or clear its tracking cache
+     * delete, or restore deleted trials
+   * Deleted trials go to the study's trash. Videos are never touched.
+7. **Analyse trial**, or **Analyse all trials**. The app tracks the body (RTMPose-x) and both poles in both views.
    Tracking is cached, so changing biomechanics settings later is instant.
-8. Inspect the results:
+8. **Biomechanics** (top of the window):
+   * Choose mode B to estimate knee and shoulder loads from assumptions you can see and edit: pole force, centre of
+     pressure, force direction, moment arm.
+   * The free-body diagram shows where each force acts at any frame.
+   * **Show in video** jumps to that frame.
+9. Inspect the results:
    * The overlays show the skeleton, the poles, the joint trajectories and live knee angles.
    * The plots under the video are linked to it: click a plot to jump the video, or play the video to move the plot cursor.
    * The **Measures** tab lists the values at the cursor and the trial summary, with evidence labels and the camera view.
-9. **Export trial…** writes the time-series CSV, the summary, events, figures, an annotated video and the processing
+10. **Export trial…** writes the time-series CSV, the summary, events, figures, an annotated video and the processing
    settings into `<folder>/<participant>/<trial>/`.
-10. **Compare** (top of the window) compares conditions within each participant across every metric. **Export all
+11. **Compare** (top of the window) compares conditions within each participant across every metric. The
+    **Trade-off** view shows, per participant, whether lower knee demand comes with higher shoulder demand. **Export all
     results…** writes the study-level tables, an Excel workbook and figures.
 
 **Create demo study** (on the Study page) builds a study from synthetic data, so you can try Compare without
@@ -91,7 +107,8 @@ recordings.
 | Knee, hip, ankle, trunk, shoulder, elbow angles; angular velocity; segment orientation | RTMPose landmarks (side view), filtered, 2D | Video estimate |
 | Knee frontal-plane projection angle, trunk sway, pelvic tilt, step width, pole spread | RTMPose landmarks (front view), 2D, scale-free | Video estimate |
 | Step time, stance time, cadence, speed | Foot speed (velocity threshold); scale | Video estimate |
-| Pole tip, axis angle, contact timing, plant timing vs foot strike | Automatic hand-anchored pole detection (or manual clicks) | Video estimate (checked visually, not yet validated against markers) |
+| Pole tip, axis angle, contact timing, plant timing vs foot strike | Automatic hand-anchored pole detection (or manual clicks) | Video estimate (tip error median 14 px against hand labels) |
+| Pole technique: alternating, simultaneous, single; timing class; steps without a pole | Pole-tip and foot contacts | Video estimate, with a confidence value |
 | Knee extensor moment | Inverse dynamics with force-plate data, **or** a quasi-static model with an assumed foot force | Model or Scenario |
 | Quadriceps force | Knee moment ÷ patellar tendon moment arm (5 cm; 4–6 cm range) | Model or Scenario |
 | Knee negative work, cumulative knee angular impulse | Mechanical-demand metrics (not fatigue) | Model or Scenario |

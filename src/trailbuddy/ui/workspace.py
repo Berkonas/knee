@@ -234,6 +234,18 @@ class Inspector(QWidget):
         self.btn_common = QPushButton("Use the whole common window")
         cv.addWidget(self.btn_common)
         v.addWidget(c)
+        c, cv = card("Movement segments (detected)")
+        self.seg_list = QTableWidget(0, 3)
+        self.seg_list.setHorizontalHeaderLabels(["Movement", "Start", "End"])
+        self.seg_list.verticalHeader().setVisible(False)
+        self.seg_list.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.seg_list.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.seg_list.setMaximumHeight(130)
+        self.seg_list.horizontalHeader().setStretchLastSection(True)
+        self.seg_list.setToolTip("Candidate intervals from whole-body movement and hip height. Double-click to use one "
+                                 "as the analysis interval; the video files are never cut.")
+        cv.addWidget(self.seg_list)
+        v.addWidget(c)
         c, cv = card("Stairs")
         cv.addWidget(self.ws.form.stairs_box)
         v.addWidget(c)
@@ -361,6 +373,7 @@ class WorkspacePage(QWidget):
         ins.t_pole.valueChanged.connect(self._trial_meta_changed)
         ins.t_notes.editingFinished.connect(self._trial_meta_changed)
         ins.iv_a.valueChanged.connect(self._interval_changed)
+        ins.seg_list.cellDoubleClicked.connect(self._use_segment)
         ins.iv_b.valueChanged.connect(self._interval_changed)
         state.projectChanged.connect(self._project_changed)
         self._loading = False
@@ -420,9 +433,12 @@ class WorkspacePage(QWidget):
         ins.offset.blockSignals(False)
         ins.offset.setEnabled(bool(side and front))
         self._show_sync()
+        self._fill_segments()
         a, b = t.interval or [0.0, self.video.t_max]
         ins.iv_a.setValue(a)
         ins.iv_b.setValue(b)
+        if t.interval:  # start playback at the movement, not at the blank lead-in of the recording
+            self.video.seek(a, force=True)
         self.form.load_from(t)
         folder = self.project.root / "trials" / t.id
         self.res = None
@@ -558,6 +574,22 @@ class WorkspacePage(QWidget):
         t.notes = ins.t_notes.text()
         self.state.save()
         self.state.trialsChanged.emit()
+
+    def _fill_segments(self):
+        segs = self.trial.segments if self.trial else []
+        tbl = self.inspector.seg_list
+        tbl.setRowCount(len(segs))
+        for r, g in enumerate(segs):
+            for c, txt in enumerate((f"{g['label']} ({g.get('source', 'auto')})", f"{g['start_s']:.2f} s", f"{g['end_s']:.2f} s")):
+                tbl.setItem(r, c, QTableWidgetItem(txt))
+
+    def _use_segment(self, row: int, _col: int = 0):
+        g = self.trial.segments[row]
+        self.inspector.iv_a.setValue(g["start_s"])
+        self.inspector.iv_b.setValue(g["end_s"])
+        self.video.seek(g["start_s"], force=True)
+        self.inspector.msg.setText(f"Interval set to the {g['label']} {g['start_s']:.2f}–{g['end_s']:.2f} s. "
+                                   "Re-analyse to apply it.")
 
     def _interval_changed(self):
         if self._loading or not self.trial:
@@ -703,6 +735,7 @@ class WorkspacePage(QWidget):
         self._busy(False)
         self.inspector.msg.setText("Analysis complete. Results saved with the trial.")
         self.res = res
+        self._fill_segments()
         self._attach_cached()
         self._show_result()
         self.state.trialsChanged.emit()

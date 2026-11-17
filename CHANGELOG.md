@@ -1,5 +1,64 @@
 # Changelog
 
+## 3.0.0 (2026-11-17)
+
+**Study data**
+- No placeholder body metrics. Mass and height are *missing* until entered, and studies from earlier versions are
+  migrated on opening (70 kg and 1.70 m placeholders become missing).
+- New participant fields: age, sex or gender, dominant and lead leg, footwear, carried load.
+- New trial fields: task, date, number of poles, grip, stair riser, tread and step count, ramp angle, surface,
+  force data.
+- The study file is backed up on every save (last 20 kept in `backups/`).
+
+**Load analysis modes**
+- A, video only (default): no forces or moments.
+- B, scenario: loads from editable assumptions.
+- C, measured: imported force data. Mode C never falls back to scenario values.
+- The same pole force drives the knee and arm models, with ±50% pole-force sensitivity.
+- New outputs: absolute knee moment (N·m) and arm moments per kg.
+
+**Biomechanics page**
+- Free-body diagram: COP, foot force, knee moment arm, pole force and shoulder lever arm at any frame.
+- Loads with ranges and evidence labels.
+- Assumptions can be edited and recalculated in about 0.1 s without re-tracking.
+- "Show in video" jumps to the frame.
+
+**Tracking**
+- RTMPose-x on a crop that follows the previous skeleton. Re-detection runs only when confidence drops.
+- Side-view jitter fell 53–70% and tracking runs faster.
+- Separate display smoothing (zero-lag 8 Hz) with implausible points hidden. Measurements are not affected.
+
+**Pole tips**
+- The tip now includes the dark rubber tip (7.1% extension calibrated on hand labels).
+- Median tip error fell from 30 px to 14 px with the full pipeline (12 px when each frame is left out of the calibration).
+
+**Events, technique and segments**
+- Foot strike and toe-off, single and double support.
+- Pole technique (alternating, simultaneous, single, mixed) with plant timing class, variability, steps without
+  a pole and confidence.
+- Movement segments are detected and listed, can be used as the analysis interval, and never cut the videos.
+- Playback starts at the analysis interval.
+
+**Trial management**
+- Multi-select in the browser.
+- Delete trials to the study trash, then restore them. Delete a study to the system trash.
+- Duplicate, re-analyse selected trials, clear tracking caches, and edit trial details.
+- Changing a trial's condition or number moves its results and refuses duplicates.
+
+**Compare, Study, Methods**
+- Compare: paired knee-vs-shoulder trade-off per participant, with repetition SD.
+- Study: data-quality panel and per-trial checks.
+- Methods: one compact screen plus a searchable metric list.
+
+**Docs**
+- `docs/calculation-audit.md`: every output linked to its equation, inputs, assumptions and validation state.
+- `docs/open-source-evaluation.md`: the tool review.
+
+**Fixes**
+- Tests no longer write to the user's real preferences.
+- Pages paint the theme background.
+- Segmented-control labels no longer clip.
+
 ## 2.1.0 (2026-11-17)
 - **Estimated loads are blocked without measured body metrics.** Until a participant's mass and height are entered, every force, moment, power, impulse and work value is *unavailable* and is left out of the time series and exports. Placeholder values (70 kg, 1.70 m) are no longer used.
 - **Knee moment model corrected.** The quasi-static foot force now points from the centre of pressure toward the whole-body centre of mass instead of straight up. On real data the vertical force gave 2.9 N·m/kg, about twice the published stair-descent range (1.0–1.6 N·m/kg); the new default gives 1.5–1.8 N·m/kg. The vertical model remains available as an upper bound and is part of the sensitivity range. The exact equations are in `RESEARCH_PIPELINE.md`.

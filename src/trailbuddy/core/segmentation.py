@@ -20,7 +20,11 @@ def candidate_segments(pose, min_drop_legs: float = 0.5) -> list[dict]:
     from scipy.ndimage import median_filter
 
     t = pose.t
-    hip = np.nanmean(pose.xy[:, [23, 24]], axis=1)
+    import warnings
+
+    with warnings.catch_warnings():  # frames with no hip keypoints give NaN (expected)
+        warnings.simplefilter("ignore", RuntimeWarning)
+        hip = np.nanmean(pose.xy[:, [23, 24]], axis=1)
     leg = np.nanmedian(np.linalg.norm(pose.xy[:, 23] - pose.xy[:, 27], axis=1))
     ok = np.isfinite(hip).all(axis=1)
     if ok.sum() < 10 or not np.isfinite(leg) or leg <= 0:
@@ -48,7 +52,7 @@ def candidate_segments(pose, min_drop_legs: float = 0.5) -> list[dict]:
         m = (t >= a) & (t <= b)
         drop = float(hy[m][-1] - hy[m][0])  # image y grows downward: + = hips went down
         label = "descent" if drop >= min_drop_legs else ("ascent" if drop <= -min_drop_legs else "level movement")
-        out.append({"start_s": round(a, 3), "end_s": round(b, 3), "label": label, "hip_drop_legs": round(drop, 2),
+        out.append({"start_s": round(float(a), 3), "end_s": round(float(b), 3), "label": label, "hip_drop_legs": round(drop, 2),
                     "tracked_fraction": round(float(ok[m].mean()), 3), "source": "auto"})
     return out
 
