@@ -28,7 +28,7 @@ jobs:
       - name: Download pose models to bundle
         run: |
           uv run python -c "from trailbuddy.core.pose import model_path; model_path('full')"
-          uv run python -c "from trailbuddy.core import pose_rtm; pose_rtm.detector('balanced', 'cpu')"
+          uv run python -c "from trailbuddy.core import pose_rtm; pose_rtm.detector('accurate', 'cpu'); pose_rtm.detector('balanced', 'cpu')"
       - name: PyInstaller
         run: uv run pyinstaller packaging/trailbuddy.spec --noconfirm
       - name: Smoke test built app (macOS)

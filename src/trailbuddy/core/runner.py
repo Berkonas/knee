@@ -192,6 +192,9 @@ def run_pair(project, trial, settings: AnalysisSettings, proc: dict | None = Non
     ref = side_data or front_data
     pose_full = ref[0]
     from .events import descent_window
+    from .segmentation import candidate_segments
+    manual = [g for g in trial.segments if g.get("source") == "manual"]
+    trial.segments = manual + candidate_segments(pose_full)  # side-camera clock (front clock if no side view)
     if trial.interval:
         t0, t1 = trial.interval
     else:
@@ -271,7 +274,7 @@ def run_pair(project, trial, settings: AnalysisSettings, proc: dict | None = Non
     if not part.metrics_entered:
         block_unsupported_kinetics(res)
     res.quality["sync_offset_s"] = off if (side_data and front_data) else None
-    res.quality["processing"] = {"pose": (proc or {}).get("backend", "rtmpose"), "mode": (proc or {}).get("mode", "balanced"),
+    res.quality["processing"] = {"pose": (proc or {}).get("backend", "rtmpose"), "mode": (proc or {}).get("mode", "accurate"),
                                  "stride": (proc or {}).get("stride", 1)}
     analysis.save_result(res, out, {"trial": trial.id, "participant": part.id, "condition": cond.code,
                                     "videos": [asdict(v) for v in trial.videos], "sync": trial.sync,

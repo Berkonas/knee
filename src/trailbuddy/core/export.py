@@ -203,7 +203,7 @@ def export_trial(project, trial, res, out_dir, processing: dict | None = None, a
     side = video_by_role(trial, "side") or video_by_role(trial, "front")
     if annotated_video and side is not None:
         hit = pipeline.load_cached(Path(project.root) / "cache", side.path,
-                                   {"backend": "rtmpose", "mode": "balanced", "stride": 1, **(processing or {})})
+                                   {"backend": "rtmpose", "mode": "accurate", "stride": 1, **(processing or {})})
         if hit:
             files.append(write_annotated(side.path, hit[0], hit[1], out / f"{trial.id}_annotated.mp4",
                                          trial.interval))

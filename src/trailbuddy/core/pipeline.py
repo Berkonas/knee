@@ -21,7 +21,7 @@ from .landmarks import PoseSeries
 from .pole import PoleTrack
 from .video import probe
 
-PIPELINE_VERSION = 2
+PIPELINE_VERSION = 3  # 3: tracked crops + RTMPose-x default
 POLE_VERSION = 5   # bump when the pole detector changes: poles are recomputed, cached poses are reused
 
 
@@ -37,7 +37,7 @@ def _paths(cache: Path, video: str, tag: str):
 
 
 def _tag(settings: dict) -> str:
-    return f"{settings.get('backend', 'rtmpose')}-{settings.get('mode', 'balanced')}-s{settings.get('stride', 1)}"
+    return f"{settings.get('backend', 'rtmpose')}-{settings.get('mode', 'accurate')}-s{settings.get('stride', 1)}"
 
 
 def _read_pose(cache: Path, video: str, settings: dict):
@@ -85,7 +85,7 @@ def process_recording(video: str, cache: str | Path, settings: dict | None = Non
     """Pose + pole tracking over the full recording (cached; poses and poles are cached separately)."""
     from . import pole_auto, pose_rtm
 
-    settings = {"backend": "rtmpose", "mode": "balanced", "stride": 1, **(settings or {})}
+    settings = {"backend": "rtmpose", "mode": "accurate", "stride": 1, **(settings or {})}
     cache = Path(cache)
     hit = load_cached(cache, video, settings)
     if hit is not None:

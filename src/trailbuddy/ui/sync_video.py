@@ -143,8 +143,17 @@ class ViewSource:
         self.info = self.reader.info
         self.role = role
         self.pose = None
+        self.display_xy = None   # smoothed keypoints for the overlay only (core.filters.display_pose)
+        self.display_qc = {}
+        self.smooth = True
         self.poles = {}
         self.last_index = -1
+
+    def set_tracking(self, pose, poles):
+        from ..core.filters import display_pose
+        self.pose, self.poles = pose, poles
+        self.display_xy, self.display_qc = (display_pose(pose.xy, pose.visibility, pose.fps)
+                                            if pose is not None else (None, {}))
 
     def frame_at(self, t_view: float):
         i = int(round(t_view * self.info.fps))
@@ -162,7 +171,8 @@ class ViewSource:
         k = int(np.argmin(np.abs(self.pose.t - t_view)))
         if abs(self.pose.t[k] - t_view) > 1.5 / max(self.pose.fps, 1):
             return None
-        xy, vis = self.pose.xy[k], self.pose.visibility[k]
+        src_xy = self.display_xy if (self.smooth and self.display_xy is not None) else self.pose.xy
+        xy, vis = src_xy[k], self.pose.visibility[k]
         poles = []
         for side, tr in self.poles.items():
             j = int(np.argmin(np.abs(tr.t - t_view)))
@@ -170,8 +180,8 @@ class ViewSource:
                 hand = xy[15 if side == "left" else 16]
                 poles.append((hand, tr.tip[j], float(tr.confidence[j])))
         lo = max(0, k - int(self.pose.fps * 0.6))
-        trail = [(self.pose.xy[lo:k + 1, 25], QColor(89, 208, 190, 150)), (self.pose.xy[lo:k + 1, 26], QColor(255, 179, 71, 150)),
-                 (self.pose.xy[lo:k + 1, 29], QColor(89, 208, 190, 110)), (self.pose.xy[lo:k + 1, 30], QColor(255, 179, 71, 110))]
+        trail = [(src_xy[lo:k + 1, 25], QColor(89, 208, 190, 150)), (src_xy[lo:k + 1, 26], QColor(255, 179, 71, 150)),
+                 (src_xy[lo:k + 1, 29], QColor(89, 208, 190, 110)), (src_xy[lo:k + 1, 30], QColor(255, 179, 71, 110))]
         labels = labels_fn(xy) if labels_fn else []
         return {"xy": xy, "vis": vis, "poles": poles, "trail": trail, "labels": labels}
 
@@ -248,9 +258,13 @@ class SyncVideoPanel(QWidget):
         tog = QHBoxLayout()
         tog.setSpacing(12)
         self.toggles = {}
-        for key, lab in (("skeleton", "Skeleton"), ("poles", "Poles"), ("trails", "Trajectories"), ("labels", "Angle labels")):
+        for key, lab in (("skeleton", "Skeleton"), ("poles", "Poles"), ("trails", "Trajectories"), ("labels", "Angle labels"),
+                         ("smooth", "Smoothed display")):
             cb = QCheckBox(lab)
-            cb.setChecked(key in ("skeleton", "poles"))   # nothing but tracking lines on the video by default
+            cb.setChecked(key in ("skeleton", "poles", "smooth"))   # nothing but tracking lines on the video by default
+            if key == "smooth":
+                cb.setToolTip("Overlay only: 8 Hz zero-lag filter, implausible points hidden. Off = raw tracking. "
+                              "Measurements always use their own processing.")
             cb.toggled.connect(lambda on, key=key: self._toggle(key, on))
             tog.addWidget(cb)
             self.toggles[key] = cb
@@ -308,6 +322,11 @@ class SyncVideoPanel(QWidget):
         return m.info.fps if m else 30.0
 
     def _toggle(self, key, on):
+        if key == "smooth":
+            for src in self.sources.values():
+                src.smooth = on
+            self.seek(self.t, force=True)
+            return
         for c in self.canvas.values():
             c.show[key] = on
             c.update()

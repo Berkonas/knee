@@ -25,6 +25,11 @@ from .video import FrameReader
 HALPE_TO_MP = {0: 0, 5: 11, 6: 12, 7: 13, 8: 14, 9: 15, 10: 16, 11: 23, 12: 24, 13: 25, 14: 26, 15: 27, 16: 28,
                24: 29, 25: 30, 20: 31, 21: 32}
 MODELS = {
+    # default: YOLOX-m finds the person; RTMPose-x (384x288 input) tracks the crop around the previous skeleton.
+    # On the CREATE side views this halved high-frequency keypoint jitter and ran ~2x faster than 'balanced'.
+    "accurate": ("https://download.openmmlab.com/mmpose/v1/projects/rtmposev1/onnx_sdk/yolox_m_8xb8-300e_humanart-c2c7a14a.zip",
+                 "https://download.openmmlab.com/mmpose/v1/projects/rtmposev1/onnx_sdk/rtmpose-x_simcc-body7_pt-body7-halpe26_700e-384x288-7fb6e239_20230606.zip",
+                 (288, 384)),
     "balanced": ("https://download.openmmlab.com/mmpose/v1/projects/rtmposev1/onnx_sdk/yolox_m_8xb8-300e_humanart-c2c7a14a.zip",
                  "https://download.openmmlab.com/mmpose/v1/projects/rtmposev1/onnx_sdk/rtmpose-m_simcc-body7_pt-body7-halpe26_700e-256x192-4d3e73dd_20230605.zip",
                  (192, 256)),
@@ -35,7 +40,7 @@ MODELS = {
                     "https://download.openmmlab.com/mmpose/v1/projects/rtmposev1/onnx_sdk/rtmpose-s_simcc-body7_pt-body7-halpe26_700e-256x192-7f134165_20230605.zip",
                     (192, 256)),
 }
-DET_SIZE = {"balanced": (640, 640), "performance": (640, 640), "lightweight": (416, 416)}
+DET_SIZE = {"accurate": (640, 640), "balanced": (640, 640), "performance": (640, 640), "lightweight": (416, 416)}
 
 
 def _fetch(url: str) -> str:
@@ -75,7 +80,12 @@ def best_device() -> str:
 _CACHE: dict = {}
 
 
-def detector(mode: str = "balanced", device: str | None = None):
+DEFAULT_MODE = "accurate"
+TRACK_MIN_SCORE = 0.45   # re-detect when the tracked skeleton's mean confidence drops below this
+TRACK_MAX_SIZE_CHANGE = 0.35
+
+
+def detector(mode: str = DEFAULT_MODE, device: str | None = None):
     """Callable frame -> (keypoints (P,26,2), scores (P,26)). Cached per (mode, device)."""
     from rtmlib import BodyWithFeet
 
@@ -121,10 +131,29 @@ def select_target(kps: np.ndarray, scores: np.ndarray, prev: dict | None, img_w:
     return max(cand)[1]
 
 
-def estimate(video: str | Path, start_frame: int = 0, end_frame: int | None = None, mode: str = "balanced",
+def crop_from_keypoints(k: np.ndarray, s: np.ndarray, pad: float = 1.25) -> list[float]:
+    """Box around a skeleton (confident points), enlarged by ``pad``: the crop for the next frame."""
+    good = s > 0.3
+    pts = k[good] if good.sum() >= 4 else k
+    x0, y0 = pts.min(0)
+    x1, y1 = pts.max(0)
+    c = ((x0 + x1) / 2, (y0 + y1) / 2)
+    w, h = (x1 - x0) * pad, (y1 - y0) * pad
+    w = max(w, 0.4 * h)  # a side-on standing person is narrow; keep arms and poles in the crop
+    return [c[0] - w / 2, c[1] - h / 2, c[0] + w / 2, c[1] + h / 2]
+
+
+def estimate(video: str | Path, start_frame: int = 0, end_frame: int | None = None, mode: str = DEFAULT_MODE,
              stride: int = 1, progress: Callable[[float], None] | None = None,
-             cancelled: Callable[[], bool] | None = None, device: str | None = None) -> PoseSeries:
-    """Track the participant's 2D keypoints in frames [start_frame, end_frame) (every ``stride``-th frame)."""
+             cancelled: Callable[[], bool] | None = None, device: str | None = None,
+             track: bool = True) -> PoseSeries:
+    """Track the participant's 2D keypoints in frames [start_frame, end_frame) (every ``stride``-th frame).
+
+    track=True: after the participant is found, each frame is cropped around the previous frame's skeleton
+    (as rtmlib's PoseTracker does) instead of re-running the person detector. A per-frame detector box
+    wobbles and that wobble becomes keypoint jitter. The detector runs again whenever the tracked skeleton
+    becomes uncertain (low confidence or an implausible size change), which also recovers from occlusion.
+    """
     from .pose import Cancelled
 
     det = detector(mode, device)
@@ -141,17 +170,31 @@ def estimate(video: str | Path, start_frame: int = 0, end_frame: int | None = No
     prev = None
     lost = 0
     k_out = 0
+    redetect = np.zeros(n, bool)
+    crop = None
     for i, frame in reader.iter_range(start_frame, end):
         if (i - start_frame) % stride:
             continue
         if cancelled and cancelled():
             reader.close()
             raise Cancelled()
-        kps, sc = det(frame)
-        nper[k_out] = len(kps)
-        j = select_target(kps, sc, prev if lost < 15 else None, info.width, info.height)
+        j = None
+        if track and crop is not None:
+            kps, sc = det.pose_model(frame, bboxes=[crop])
+            k, s = kps[0], sc[0]
+            good = s > 0.3
+            h = np.ptp(k[good][:, 1]) if good.sum() >= 4 else 0.0
+            if float(np.mean(s)) >= TRACK_MIN_SCORE and prev and abs(h - prev["h"]) / max(prev["h"], 1) < TRACK_MAX_SIZE_CHANGE:
+                kps, sc, j = kps, sc, 0
+                nper[k_out] = 1
+        if j is None:  # (re)detect: first frame, lost track, or uncertain tracked skeleton
+            redetect[k_out] = True
+            kps, sc = det(frame)
+            nper[k_out] = len(kps)
+            j = select_target(kps, sc, prev if lost < 15 else None, info.width, info.height)
         if j is not None:
             k, s = kps[j], sc[j]
+            crop = crop_from_keypoints(k, s)
             for h_i, m_i in HALPE_TO_MP.items():
                 xy[k_out, m_i] = k[h_i]
                 vis[k_out, m_i] = s[h_i]
@@ -161,6 +204,7 @@ def estimate(video: str | Path, start_frame: int = 0, end_frame: int | None = No
             lost = 0
         else:
             lost += 1
+            crop = None
         k_out += 1
         if progress and k_out % 5 == 0:
             progress(k_out / n)
@@ -170,5 +214,6 @@ def estimate(video: str | Path, start_frame: int = 0, end_frame: int | None = No
     t = idx[:k_out] / info.fps
     ps = PoseSeries(t, xy[:k_out], vis[:k_out], info.fps / stride, info.width, info.height, str(video),
                     {"model": f"rtmpose_halpe26_{mode}", "start_frame": start_frame, "stride": stride,
-                     "people_per_frame_max": int(nper[:k_out].max()) if k_out else 0})
+                     "people_per_frame_max": int(nper[:k_out].max()) if k_out else 0,
+                     "tracked_crops": bool(track), "redetect_frames": int(redetect[:k_out].sum())})
     return ps

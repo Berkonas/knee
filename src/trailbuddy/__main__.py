@@ -83,7 +83,7 @@ def _acceptance(folder: Path, out: Path) -> int:
     print(f"imported {len(trials)} trial(s): " + ", ".join(f"{t.id} ({'+'.join(v.role for v in t.videos)})" for t in trials))
     ok = True
     for t in trials:
-        res = run_pair(proj, t, AnalysisSettings(load_mode="scenario"), {"backend": "rtmpose", "mode": "balanced", "stride": 1})
+        res = run_pair(proj, t, AnalysisSettings(load_mode="scenario"), {"backend": "rtmpose", "mode": "accurate", "stride": 1})
         export.export_trial(proj, t, res, out / "export", annotated_video=False)
         ts = pd.read_csv(out / "export" / t.participant_id / t.id / "timeseries.csv")
         same = np.allclose(ts.to_numpy(float), res.timeseries.to_numpy(float), rtol=1e-6, atol=1e-6, equal_nan=True)

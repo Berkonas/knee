@@ -24,7 +24,7 @@ from .sync_video import SyncVideoPanel
 from .theme import EVIDENCE_COLORS
 from .widgets import Worker, error_box, start_worker
 
-PROC_DEFAULT = {"backend": "rtmpose", "mode": "balanced", "stride": 1}
+PROC_DEFAULT = {"backend": "rtmpose", "mode": "accurate", "stride": 1}
 
 
 def _fit(table: QTableWidget) -> None:
@@ -251,7 +251,7 @@ class Inspector(QWidget):
         self.p_backend.addItem("RTMPose + YOLOX (recommended)", "rtmpose")
         self.p_backend.addItem("MediaPipe Pose", "mediapipe")
         self.p_mode = QComboBox()
-        for lab, val in (("Balanced", "balanced"), ("Accurate (slower)", "performance"), ("Fast", "lightweight")):
+        for lab, val in (("Accurate (RTMPose-x, tracked)", "accurate"), ("Balanced (RTMPose-m)", "balanced"), ("Fast (RTMPose-s)", "lightweight")):
             self.p_mode.addItem(lab, val)
         self.p_stride = QComboBox()
         self.p_stride.addItem("Every frame", 1)
@@ -437,7 +437,8 @@ class WorkspacePage(QWidget):
         for _role, src in self.video.sources.items():
             hit = pipeline.load_cached(self.project.root / "cache", src.info.path, {**PROC_DEFAULT, **self.proc()})
             if hit:
-                src.pose, src.poles = hit[0], hit[1]
+                src.set_tracking(hit[0], hit[1])
+                src.smooth = self.video.toggles["smooth"].isChecked()
         self.video.seek(self.video.t, force=True)
 
     def _labels(self, xy):

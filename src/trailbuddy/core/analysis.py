@@ -488,8 +488,21 @@ def analyse(pose: PoseSeries, body_mass: float | None, height_m: float | None, s
         for c in ivs:
             ev_rows.append({"event": f"{fs_}_foot_contact", "start_s": c.start_s, "end_s": c.end_s,
                             "duration_s": c.duration})
+    from .technique import analyse_technique, foot_event_rows, support_phases
+    ev_rows += foot_event_rows(gait.contacts, float(t[0]), float(t[-1]))
     events = pd.DataFrame(ev_rows, columns=["event", "start_s", "end_s", "duration_s", "angle_at_contact_deg"])
     events = events.sort_values("start_s").reset_index(drop=True)
+    tq = analyse_technique(events, {k: float(v.coverage()) for k, v in poles.items() if v is not None}, uses_poles)
+    tq.support_phases = support_phases(t, stance_mask(t, gait.contacts.get("left", [])),
+                                       stance_mask(t, gait.contacts.get("right", [])))
+    quality["technique"] = tq.as_dict()
+    tk = "video" if tq.n_plants else "unavailable"
+    why = "" if tq.n_plants else ("No poles in this condition." if not uses_poles else "No pole plants detected.")
+    M.append(MetricValue("pole_simultaneous_fraction", tq.simultaneous_fraction, tk, why or tq.pattern))
+    M.append(MetricValue("pole_plant_timing_sd", tq.plant_timing_sd_s, tk if tq.plant_timing_sd_s is not None else
+                         "unavailable", why or "consistency of plant timing across plants"))
+    M.append(MetricValue("steps_without_pole", tq.steps_without_pole_pct, tk if tq.steps_without_pole_pct is not None
+                         else "unavailable", why))
 
     quality = {**kin.quality, **quality}
     seg = segments or {}

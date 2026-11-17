@@ -18,7 +18,7 @@ from trailbuddy.core.project import Project  # noqa: E402
 root = Path(sys.argv[1])
 out = Path(sys.argv[2]) if len(sys.argv) > 2 else Path("VALIDATION_REPORT.md")
 pr = Project.load(root)
-proc = {"backend": "rtmpose", "mode": "balanced", "stride": 1}
+proc = {"backend": "rtmpose", "mode": "accurate", "stride": 1}
 by_file = {}
 for t in pr.trials:
     for v in t.videos:
