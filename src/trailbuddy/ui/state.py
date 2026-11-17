@@ -4,12 +4,13 @@ import os
 
 from PySide6.QtCore import QObject, QSettings, Signal
 
+from ..core.project import Project
+
 
 def app_settings() -> QSettings:
     """The user's preferences. Tests set TRAILBUDDY_SETTINGS_APP so they never touch the real ones."""
     return QSettings("TrailBuddy", os.environ.get("TRAILBUDDY_SETTINGS_APP", "Analyzer"))
 
-from ..core.project import Project
 
 
 class AppState(QObject):

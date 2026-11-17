@@ -3,7 +3,6 @@
 Usage: uv run python scripts/validation_report.py studies/<study> [out.md]
 """
 
-import json
 import sys
 import tempfile
 from pathlib import Path
