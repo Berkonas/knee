@@ -18,7 +18,7 @@ from . import analysis, kinematics as kmod, pose as pose_mod, sync, triangulatio
 from .analysis import AnalysisSettings, TrialResult
 from .forces import ForceData, load_force_csv
 from .landmarks import PoseSeries, idx
-from .pole import PoleTrack
+from .pole import PoleTrack  # noqa: F401
 from .video import probe
 
 Progress = Callable[[float, str], None]
@@ -144,6 +144,119 @@ def run_trial(project, trial, settings: AnalysisSettings, poles: dict[str, PoleT
                                     "interval": [start, end], "pose_model": variant})
     trial.settings.update({k: v for k, v in asdict(settings).items()})
     trial.interval = [start, end]
+    trial.status = "analysed"
+    project.save()
+    if progress:
+        progress(1.0, "Done")
+    return res
+
+
+# =============================================================================================
+# v2: paired front/side trials using the per-recording cache (core.pipeline)
+# =============================================================================================
+
+def video_by_role(trial, role: str):
+    for v in trial.videos:
+        if v.role == role:
+            return v
+    return None
+
+
+def run_pair(project, trial, settings: AnalysisSettings, proc: dict | None = None,
+             progress: Progress | None = None, cancelled=None) -> TrialResult:
+    """Analyse a trial with a side view (sagittal kinetics/kinematics) and/or a front view (frontal measures).
+
+    Sync convention: trial.sync['offset_s'] = t_side - t_front for the same instant.
+    The analysis interval trial.interval is expressed on the side-camera clock (front clock if no side view).
+    """
+    from . import frontal, pipeline
+    from .pole import ManualAnnotations
+
+    proc = proc or {}
+    cache = Path(project.root) / "cache"
+    side_v, front_v = video_by_role(trial, "side"), video_by_role(trial, "front")
+    if side_v is None and front_v is None:
+        raise ValueError("This trial has no side or front recording.")
+    part = project.participant(trial.participant_id)
+    cond = project.condition(trial.condition_code)
+    out = project.trial_dir(trial.id)
+    off = float(trial.sync.get("offset_s", 0.0))
+
+    def sub(lo, hi):
+        return (lambda f, m: progress(lo + (hi - lo) * f, m)) if progress else None
+
+    side_data = pipeline.process_recording(side_v.path, cache, proc, sub(0, 0.45), cancelled) if side_v else None
+    front_data = pipeline.process_recording(front_v.path, cache, proc, sub(0.45, 0.9), cancelled) if front_v else None
+    if progress:
+        progress(0.92, "Computing biomechanics")
+    ref = side_data or front_data
+    pose_full = ref[0]
+    t0, t1 = trial.interval or [float(pose_full.t[0]), float(pose_full.t[-1])]
+    if side_data and front_data and not trial.interval:
+        f_t = front_data[0].t + off  # front clock -> side clock: analyse the common window by default
+        t0, t1 = max(t0, float(f_t[0])), min(t1, float(f_t[-1]))
+    forces = load_force_csv(trial.settings["force_csv"]) if trial.settings.get("force_csv") else None
+    if trial.stair.get("step_height_m") and trial.stair.get("n_steps") and settings.descent_height_m is None:
+        settings.descent_height_m = float(trial.stair["step_height_m"]) * int(trial.stair["n_steps"])
+    if side_data:
+        pose_s = pipeline.slice_pose(side_data[0], t0, t1)
+        poles_s = {k: pipeline.slice_track(v, t0, t1) for k, v in side_data[1].items()}
+        man = out / "poles_manual.json"
+        if man.exists():
+            ann = ManualAnnotations.load(man)
+            f0 = int(round(pose_s.t[0] * side_data[0].fps * pose_s.meta.get("stride", 1)))
+            for s_ in ("left", "right"):
+                if ann.points.get(s_, {}).get("tip"):
+                    m_tr = ann.to_track(s_, pose_s.t, f0)
+                    a = poles_s.get(s_)
+                    if a is not None:  # manual points override automatic ones frame by frame
+                        tip = np.where(np.isfinite(m_tr.tip), m_tr.tip, a.tip)
+                        src = np.where(np.isfinite(m_tr.tip[:, 0]), m_tr.source, a.source)
+                        conf = np.where(np.isfinite(m_tr.tip[:, 0]), m_tr.confidence, a.confidence)
+                        poles_s[s_] = PoleTrack(pose_s.t, tip, None, conf, src, "auto+manual")
+                    else:
+                        poles_s[s_] = m_tr
+        uses = cond.uses_poles or pipeline.pole_present(poles_s)
+        res = analysis.analyse(pose_s, part.body_mass_kg, part.height_m, settings, uses, poles_s, forces,
+                               part.segments)
+        if uses and not cond.uses_poles:
+            res.notes.append("Poles were detected although the condition says 'no poles': check the condition.")
+    else:
+        pose_f0 = pipeline.slice_pose(front_data[0], t0, t1)
+        res = analysis.analyse(pose_f0, part.body_mass_kg, part.height_m,
+                               AnalysisSettings(scale_method="none", side=settings.side), cond.uses_poles, None)
+        res.notes.append("No side view: sagittal angles below come from the FRONT camera and are not "
+                         "meaningful sagittal measures; kinetics unavailable.")
+    if front_data:
+        fa, fb = (t0 - off, t1 - off) if side_data else (t0, t1)
+        pose_f = pipeline.slice_pose(front_data[0], fa, fb)
+        poles_f = {k: pipeline.slice_track(v, fa, fb) for k, v in front_data[1].items()}
+        fdf, fm, fq = frontal.analyse_front(pose_f, poles_f, settings.cutoff_hz, settings.min_visibility)
+        for m in fm:
+            m.view = "front"
+        ts = res.timeseries
+        tt = ts["time_s"].to_numpy()
+        f_time = fdf["time_s"].to_numpy() + (off if side_data else 0.0)
+        for c in fdf.columns:
+            if c != "time_s":
+                ts[c] = sync.resample_to(f_time, fdf[c].to_numpy(), tt)
+        res.metrics.extend(fm)
+        res.quality.update(fq)
+    if not front_data:
+        for k in ("front_knee_fppa_peak", "front_trunk_lateral_lean_rom", "front_pelvic_obliquity_rom",
+                  "front_step_width_ratio_mean", "front_pole_tip_spread_mean"):
+            from .metrics import MetricValue
+            res.metrics.append(MetricValue(k, None, "unavailable", "No front-view recording for this trial.", view="front"))
+    if not part.metrics_entered:
+        res.notes.insert(0, "Body mass/height are placeholder values: enter real body metrics before using any "
+                         "force or moment.")
+    res.quality["sync_offset_s"] = off if (side_data and front_data) else None
+    res.quality["processing"] = {"pose": (proc or {}).get("backend", "rtmpose"), "mode": (proc or {}).get("mode", "balanced"),
+                                 "stride": (proc or {}).get("stride", 1)}
+    analysis.save_result(res, out, {"trial": trial.id, "participant": part.id, "condition": cond.code,
+                                    "videos": [asdict(v) for v in trial.videos], "sync": trial.sync,
+                                    "interval": [t0, t1], "processing": proc})
+    trial.interval = [t0, t1]
     trial.status = "analysed"
     project.save()
     if progress:

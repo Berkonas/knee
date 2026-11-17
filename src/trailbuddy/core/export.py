@@ -165,3 +165,69 @@ def summary_markdown(project, long: pd.DataFrame, group: pd.DataFrame, baseline:
         lines.append("")
     lines += ["## Limitations", ""] + [f"- {x}" for x in LIMITATIONS] + [""]
     return "\n".join(lines)
+
+
+def export_trial(project, trial, res, out_dir, processing: dict | None = None, annotated_video: bool = True) -> list[Path]:
+    """Per-trial export organised as <out>/<participant>/<trial>/: time series CSV, summary CSV, events,
+    PNG figures, processing settings JSON and (optionally) an annotated side-view video."""
+    import json
+
+    from . import pipeline
+    from .runner import video_by_role
+
+    out = Path(out_dir) / trial.participant_id / trial.id
+    out.mkdir(parents=True, exist_ok=True)
+    files = []
+    res.timeseries.to_csv(out / "timeseries.csv", index=False, float_format="%.6g")
+    res.summary_table().to_csv(out / "summary.csv", index=False, float_format="%.6g")
+    res.events.to_csv(out / "events.csv", index=False, float_format="%.6g")
+    files += [out / "timeseries.csv", out / "summary.csv", out / "events.csv"]
+    meta = {"trial": trial.id, "participant": trial.participant_id, "condition": trial.condition_code,
+            "videos": [{"role": v.role, "file": Path(v.path).name, **(v.meta or {})} for v in trial.videos],
+            "sync": trial.sync, "interval_s": trial.interval, "analysis_settings": res.settings,
+            "processing": processing or {}, "quality": res.quality, "notes": res.notes}
+    (out / "processing_settings.json").write_text(json.dumps(meta, indent=2, default=str))
+    files.append(out / "processing_settings.json")
+    for name, fig in (("timeline", plots.fig_timeline(res, trial.id)), ("leg_motion", plots.fig_stick_strip(res)),
+                      ("kinematics", plots.fig_kinematics(res)), ("knee_load", plots.fig_knee_load(res))):
+        files += plots.save(fig, out / name, ("png",))
+    side = video_by_role(trial, "side") or video_by_role(trial, "front")
+    if annotated_video and side is not None:
+        hit = pipeline.load_cached(Path(project.root) / "cache", side.path,
+                                   {"backend": "rtmpose", "mode": "balanced", "stride": 1, **(processing or {})})
+        if hit:
+            files.append(write_annotated(side.path, hit[0], hit[1], out / f"{trial.id}_annotated.mp4",
+                                         trial.interval))
+    return files
+
+
+def write_annotated(video, pose, poles, dst, interval=None) -> Path:
+    import cv2
+
+    from .landmarks import SKELETON
+    from .video import FrameReader, write_video
+
+    r = FrameReader(video)
+    fps = r.info.fps
+    a, b = interval or [0, r.info.duration]
+    f0, f1 = int(a * fps), min(r.info.n_frames, int(b * fps) + 1)
+
+    def frames():
+        for i, fr in r.iter_range(f0, f1):
+            tt = i / fps
+            k = int(np.argmin(np.abs(pose.t - tt)))
+            xy, vis = pose.xy[k], pose.visibility[k]
+            for p_, q in SKELETON:
+                if np.isfinite(xy[[p_, q]]).all():
+                    col = (190, 208, 89) if min(vis[p_], vis[q]) >= 0.5 else (126, 138, 240)
+                    cv2.line(fr, tuple(xy[p_].astype(int)), tuple(xy[q].astype(int)), col, 3, cv2.LINE_AA)
+            for side, tr in poles.items():
+                j = int(np.argmin(np.abs(tr.t - tt)))
+                hand = xy[15 if side == "left" else 16]
+                if np.isfinite(tr.tip[j]).all() and np.isfinite(hand).all():
+                    cv2.line(fr, tuple(hand.astype(int)), tuple(tr.tip[j].astype(int)), (71, 179, 255), 4, cv2.LINE_AA)
+            cv2.putText(fr, f"t = {tt:.3f} s", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2, cv2.LINE_AA)
+            yield fr
+    write_video(frames(), dst, fps)
+    r.close()
+    return Path(dst)

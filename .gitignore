@@ -21,3 +21,12 @@ projects/
 # Local launcher app and logs created by scripts/install_mac.command
 *.app/
 logs/
+
+# Experimental recordings (participant data, contain GPS metadata): never committed
+Videos/
+videos/
+*.MOV
+*.mov
+
+# Study folders (participant results) stay local
+studies/

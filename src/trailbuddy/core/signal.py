@@ -77,3 +77,29 @@ def condition_xy(xy: np.ndarray, fs: float, cutoff: float, max_gap: int):
             out[:, k, c] = lowpass(filled, fs, cutoff)
             mask[:, k] |= interp
     return out, mask
+
+
+def despike(y: np.ndarray, k: float = 6.0, win: int = 7, floor: float = 0.0) -> tuple[np.ndarray, np.ndarray]:
+    """Remove isolated tracking spikes: samples deviating from a running median by more than
+    k x (robust SD of the residual) are set to NaN. Returns (cleaned, outlier_mask).
+
+    Real movement is smooth at 60 fps, so a one- or two-frame jump of a landmark (e.g. a knee briefly
+    snapping to the other leg) appears as a large residual from the local median.
+    """
+    from scipy.ndimage import median_filter
+
+    y = np.asarray(y, float)
+    ok = np.isfinite(y)
+    out = y.copy()
+    mask = np.zeros(len(y), bool)
+    if ok.sum() < win:
+        return out, mask
+    yi = y.copy()
+    yi[~ok] = np.interp(np.flatnonzero(~ok), np.flatnonzero(ok), y[ok]) if (~ok).any() else yi[~ok]
+    med = median_filter(yi, size=win, mode="nearest")
+    res = y - med
+    mad = np.nanmedian(np.abs(res[ok])) * 1.4826
+    thr = max(k * mad, floor)
+    mask = ok & (np.abs(res) > thr)
+    out[mask] = np.nan
+    return out, mask

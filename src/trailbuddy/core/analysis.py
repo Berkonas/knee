@@ -64,7 +64,7 @@ class TrialResult:
         return next((m for m in self.metrics if m.key == key), None)
 
     def summary_table(self) -> pd.DataFrame:
-        cols = ["key", "label", "value", "sd", "low", "high", "unit", "evidence", "note"]
+        cols = ["key", "label", "value", "sd", "low", "high", "unit", "evidence", "view", "note"]
         return pd.DataFrame([m.as_row() for m in self.metrics])[cols]
 
 
@@ -123,6 +123,17 @@ def analyse(pose: PoseSeries, body_mass: float, height_m: float, settings: Analy
         ts[f"{nm}_x_{unit}"] = kin.pts[nm][:, 0]
         ts[f"{nm}_y_{unit}"] = kin.pts[nm][:, 1]
 
+    # Segment orientation from vertical (deg; + = distal end ahead of proximal in the travel direction)
+    def seg_from_vertical(prox, dist):
+        v = kin.get(side, dist) - kin.get(side, prox)
+        return np.degrees(np.arctan2(v[:, 0], -v[:, 1]))
+    ts[f"{side}_thigh_orientation_deg"] = seg_from_vertical("hip", "knee")
+    ts[f"{side}_shank_orientation_deg"] = seg_from_vertical("knee", "ankle")
+    ts[f"{side}_upper_arm_orientation_deg"] = seg_from_vertical("shoulder", "elbow")
+    ts[f"{side}_forearm_orientation_deg"] = seg_from_vertical("elbow", "wrist")
+    for j in ("knee_flexion", "hip_flexion", "ankle_dorsiflexion", "elbow_flexion", "shoulder_flexion"):
+        ts[f"{side}_{j}_velocity_dps"] = np.gradient(kin.angles[f"{side}_{j}"], 1.0 / kin.fs)
+
     M: list[MetricValue] = []
     a = kin.angles
     kf = a[f"{side}_knee_flexion"]
@@ -169,6 +180,12 @@ def analyse(pose: PoseSeries, body_mass: float, height_m: float, settings: Analy
             continue
         ang = tr.angle_from_vertical_deg(hand_px[pside]) * kin.direction
         ts[f"pole_{pside}_angle_deg"] = ang
+        ts[f"pole_{pside}_tracking_conf"] = tr.confidence
+        # pole relative to the forearm (deg between the forearm direction and the pole axis)
+        fa = kin.get(pside, "wrist") - kin.get(pside, "elbow")
+        fa_ang = np.degrees(np.arctan2(fa[:, 0], fa[:, 1]))  # lab frame: y up -> from 'down'... use image-equivalent
+        ts[f"pole_{pside}_minus_forearm_deg"] = np.abs(((ang - (-np.degrees(np.arctan2(fa[:, 0], -fa[:, 1]))) + 180) % 360) - 180)
+        del fa_ang
         ts[f"pole_{pside}_tip_source"] = tr.source
         tip_lab = kmod.to_lab(tr.tip, pose.height, kin.direction, scale)
         hand_lab = dyn.grip_point(kin, pside)
@@ -189,15 +206,29 @@ def analyse(pose: PoseSeries, body_mass: float, height_m: float, settings: Analy
             ev_rows.append({"event": f"pole_{pside}_contact", "start_s": c.start_s, "end_s": c.end_s,
                             "duration_s": c.duration, "angle_at_contact_deg": float(ang[c.start_i])})
     plant_rows = [r for r in ev_rows if r["event"].startswith("pole")]
+    # coordination: pole plant relative to the nearest foot strike of the analysed leg (s; + = pole after foot)
+    strikes = np.array([c.start_s for c in gait.contacts.get(side, []) if c.start_i > 0])
+    leads = []
+    for r in plant_rows:
+        if len(strikes):
+            d = r["start_s"] - strikes
+            leads.append(float(d[np.argmin(np.abs(d))]))
     if plant_rows:
         dur = np.array([r["duration_s"] for r in plant_rows])
         angs = np.array([r["angle_at_contact_deg"] for r in plant_rows])
         M.append(MetricValue("pole_contact_time", float(dur.mean()), "video", "awaiting validation",
                              sd=float(dur.std(ddof=1)) if len(dur) > 1 else None))
         M.append(MetricValue("pole_angle_at_contact", float(np.nanmean(angs)), "video", "awaiting validation"))
-    elif uses_poles:
-        notes.append("Poles used but not tracked: pole timing and angles unavailable. "
-                     "Use coloured tip markers or manual annotation.")
+        M.append(MetricValue("pole_plant_timing", float(np.mean(leads)) if leads else None,
+                             "video" if leads else "unavailable",
+                             "+ = pole plants after the foot lands" if leads else "Needs foot strikes and pole plants."))
+    else:
+        if uses_poles:
+            notes.append("Poles used but not tracked: pole timing and angles unavailable. "
+                         "Correct the pole manually or adjust the pole colour range.")
+        for key in ("pole_contact_time", "pole_angle_at_contact", "pole_plant_timing"):
+            M.append(MetricValue(key, None, "unavailable",
+                                 "Pole not tracked in the side view." if uses_poles else "No poles in this condition."))
 
     # ---- external forces ------------------------------------------------------------------
     pl = dyn.PoleLoad()
@@ -438,7 +469,7 @@ def load_result(out_dir: str | Path) -> TrialResult:
         g = lambda k: None if pd.isna(r.get(k)) else float(r[k])  # noqa: E731
         kind = next(k for k, v in KINDS.items() if v == r["evidence"])
         metrics.append(MetricValue(r["key"], g("value"), kind, "" if pd.isna(r["note"]) else str(r["note"]),
-                                   g("sd"), g("low"), g("high")))
+                                   g("sd"), g("low"), g("high"), str(r.get("view", "side")) if "view" in r else "side"))
     sens = out / "sensitivity.csv"
     try:
         sdf = pd.read_csv(sens)

@@ -132,6 +132,19 @@ def compute(pose: PoseSeries, scale_m_per_px: float | None = None, cutoff_hz: fl
     direction = walking_direction(pose) if direction is None else direction
     xy = pose.xy.copy()
     xy[pose.visibility < min_visibility] = np.nan  # discard low-confidence landmarks
+    # spike removal: a landmark must deviate from its 7-frame running median by > 6 robust SD AND > 8% of
+    # the leg length (so fast but genuine swing-phase motion is kept)
+    from .signal import despike
+    leg = np.nanmedian(np.linalg.norm(pose.xy[:, 23] - pose.xy[:, 27], axis=1)) if pose.n_frames else np.nan
+    floor = 0.08 * leg if np.isfinite(leg) else 0.0
+    outliers = np.zeros(xy.shape[:2], bool)
+    for k in range(xy.shape[1]):
+        if np.isfinite(xy[:, k, 0]).sum() < 10:
+            continue
+        for c in range(2):
+            xy[:, k, c], m = despike(xy[:, k, c], floor=floor)
+            outliers[:, k] |= m
+    xy[outliers] = np.nan
     raw_mask = np.isnan(xy[..., 0])
     filt, interp = condition_xy(xy, fs, cutoff_hz, max_gap=max(1, int(round(max_gap_s * fs))))
     lab = to_lab(filt, pose.height, direction, scale_m_per_px)
@@ -171,6 +184,7 @@ def compute(pose: PoseSeries, scale_m_per_px: float | None = None, cutoff_hz: fl
     quality["pct_interpolated"] = float(100 * interp.mean())
     quality["pct_missing_after_fill"] = float(100 * np.isnan(filt[..., 0]).mean())
     quality["pct_low_confidence_raw"] = float(100 * raw_mask.mean())
+    quality["pct_outliers_removed"] = float(100 * outliers.mean())
 
     return Kinematics(pose.t.copy(), fs, pts, ang, "m" if scale_m_per_px else "px",
                       scale_m_per_px, direction, quality, interp)

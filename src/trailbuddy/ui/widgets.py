@@ -17,6 +17,18 @@ from ..core.video import FrameReader, VideoError
 from .theme import EVIDENCE_COLORS
 
 
+def open_folder(path) -> None:
+    import os
+    import subprocess
+    import sys
+    if sys.platform == "darwin":
+        subprocess.Popen(["open", str(path)])
+    elif os.name == "nt":
+        os.startfile(str(path))  # noqa: S606
+    else:
+        subprocess.Popen(["xdg-open", str(path)])
+
+
 def page_header(title: str, hint: str) -> QWidget:
     w = QWidget()
     lay = QVBoxLayout(w)

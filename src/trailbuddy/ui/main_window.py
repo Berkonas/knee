@@ -3,45 +3,20 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QAction, QIcon, QKeySequence
-from PySide6.QtWidgets import (QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMainWindow, QMessageBox,
-                               QStackedWidget, QVBoxLayout, QWidget)
+from PySide6.QtGui import QAction, QActionGroup, QIcon, QKeySequence
+from PySide6.QtWidgets import QApplication, QLabel, QMainWindow, QMessageBox, QStackedWidget, QToolBar, QWidget
 
 from .. import APP_NAME, __version__
 from ..core.paths import assets_dir
+from .components import Segmented
 from .methods_page import MethodsPage
 from .project_page import ProjectPage
 from .results_page import ResultsPage
-from .single_page import SinglePage
 from .state import AppState
-from .two_page import TwoPage
+from .theme import apply_theme
+from .workspace import WorkspacePage
 
-class Sidebar(QWidget):
-    """Deep spruce sidebar with faint topographic contour lines: the app's quiet signature."""
-
-    def paintEvent(self, _):
-        import math
-
-        from PySide6.QtCore import QPointF
-        from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.fillRect(self.rect(), QColor("#17302D"))
-        w, h = self.width(), self.height()
-        p.setPen(QPen(QColor(255, 255, 255, 16), 1.2))
-        for k in range(9):
-            path = QPainterPath()
-            y0 = h * 0.55 + k * 26
-            for i, x in enumerate(range(-10, w + 12, 8)):
-                y = y0 + 14 * math.sin(x / w * 2.2 * math.pi + k * 0.55) - 0.25 * x
-                pt = QPointF(x, y)
-                path.moveTo(pt) if i == 0 else path.lineTo(pt)
-            p.drawPath(path)
-        p.end()
-
-
-PAGES = [("Study", "project"), ("One camera", "single"), ("Two cameras", "two"), ("Results", "results"),
-         ("Methods", "methods")]
+MODES = [("Analyse", "workspace"), ("Study", "project"), ("Compare", "results"), ("Methods", "methods")]
 
 
 class MainWindow(QMainWindow):
@@ -49,79 +24,131 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.state = state or AppState()
         self.setWindowTitle(APP_NAME)
+        self.setUnifiedTitleAndToolBarOnMac(True)
         icon = assets_dir() / "icon.png"
         if icon.exists():
             self.setWindowIcon(QIcon(str(icon)))
-        self.resize(1360, 860)
-        self.setMinimumSize(QSize(1000, 680))
-        central = QWidget()
-        h = QHBoxLayout(central)
-        h.setContentsMargins(0, 0, 0, 0)
-        h.setSpacing(0)
-        side = Sidebar()
-        side.setObjectName("sidebar")
-        side.setFixedWidth(196)
-        sl = QVBoxLayout(side)
-        sl.setContentsMargins(0, 0, 0, 0)
-        t = QLabel("TrailBuddy\nAnalyzer"); t.setObjectName("appTitle")
-        sub = QLabel("Pole descent biomechanics"); sub.setObjectName("appSubtitle")
-        sl.addWidget(t); sl.addWidget(sub)
-        self.nav = QListWidget(); self.nav.setObjectName("nav")
-        for label, key in PAGES:
-            it = QListWidgetItem(label)
-            it.setData(Qt.ItemDataRole.UserRole, key)
-            self.nav.addItem(it)
-        sl.addWidget(self.nav, 1)
-        self.project_badge = QLabel("No study open"); self.project_badge.setObjectName("projectBadge")
-        self.project_badge.setWordWrap(True)
-        sl.addWidget(self.project_badge)
-        h.addWidget(side)
-        self.stack = QStackedWidget()
-        self.pages = {"project": ProjectPage(self.state), "single": SinglePage(self.state), "two": TwoPage(self.state),
+        self.resize(1480, 920)
+        self.setMinimumSize(QSize(1080, 680))
+        self.pages = {"workspace": WorkspacePage(self.state), "project": ProjectPage(self.state),
                       "results": ResultsPage(self.state), "methods": MethodsPage(self.state)}
-        for _, key in PAGES:
+        self.stack = QStackedWidget()
+        for _, key in MODES:
             self.stack.addWidget(self.pages[key])
-        h.addWidget(self.stack, 1)
-        self.setCentralWidget(central)
-        self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
-        self.nav.setCurrentRow(0)
+        self.setCentralWidget(self.stack)
+        tb = QToolBar("Main")
+        tb.setMovable(False)
+        tb.setIconSize(QSize(16, 16))
+        self.addToolBar(Qt.ToolBarArea.TopToolBarArea, tb)
+        title = QLabel(f"  {APP_NAME}")
+        title.setObjectName("cardTitle")
+        tb.addWidget(title)
+        spacer = QWidget()
+        spacer.setSizePolicy(spacer.sizePolicy().horizontalPolicy().Expanding, spacer.sizePolicy().verticalPolicy())
+        from PySide6.QtWidgets import QSizePolicy
+        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        tb.addWidget(spacer)
+        self.mode = Segmented([m for m, _ in MODES])
+        self.mode.changed.connect(self.stack.setCurrentIndex)
+        tb.addWidget(self.mode)
+        spacer2 = QWidget()
+        spacer2.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        tb.addWidget(spacer2)
+        self.study_label = QLabel("No study open  ")
+        self.study_label.setObjectName("muted")
+        tb.addWidget(self.study_label)
         self.state.status.connect(lambda m: self.statusBar().showMessage(m, 8000))
         self.state.projectChanged.connect(self._project_changed)
         self.state.openTrial.connect(self._open_trial)
+        self.pages["workspace"].browser.importRequested.connect(self.import_recordings)
         self._menus()
-        self.statusBar().showMessage("Ready. Create or open a study to begin.")
+        self.statusBar().showMessage("Ready. Open or create a study, then import recordings.")
 
     def _menus(self):
-        m = self.menuBar().addMenu("&File")
+        mb = self.menuBar()
+        m = mb.addMenu("&File")
         for text, key, fn in (("New study…", QKeySequence.StandardKey.New, self.pages["project"].new_project),
-                              ("Open study…", QKeySequence.StandardKey.Open, self.pages["project"].open_project)):
-            a = QAction(text, self); a.setShortcut(key); a.triggered.connect(fn); m.addAction(a)
+                              ("Open study…", QKeySequence.StandardKey.Open, self.pages["project"].open_project),
+                              ("Import recordings…", "Ctrl+I", self.import_recordings)):
+            a = QAction(text, self)
+            a.setShortcut(key)
+            a.triggered.connect(fn)
+            m.addAction(a)
         m.addSeparator()
-        a = QAction("Quit", self); a.setShortcut(QKeySequence.StandardKey.Quit); a.triggered.connect(self.close)
+        a = QAction("Export all results…", self)
+        a.setShortcut("Ctrl+E")
+        a.triggered.connect(self.pages["results"].export)
         m.addAction(a)
-        v = self.menuBar().addMenu("&View")
-        for i, (label, _) in enumerate(PAGES):
-            a = QAction(label, self); a.setShortcut(f"Ctrl+{i + 1}")
-            a.triggered.connect(lambda _=False, i=i: self.nav.setCurrentRow(i)); v.addAction(a)
-        hm = self.menuBar().addMenu("&Help")
-        a = QAction(f"About {APP_NAME}", self); a.triggered.connect(self._about); hm.addAction(a)
+        m.addSeparator()
+        a = QAction("Quit", self)
+        a.setShortcut(QKeySequence.StandardKey.Quit)
+        a.triggered.connect(self.close)
+        m.addAction(a)
+        v = mb.addMenu("&View")
+        for i, (label, _) in enumerate(MODES):
+            a = QAction(label, self)
+            a.setShortcut(f"Ctrl+{i + 1}")
+            a.triggered.connect(lambda _=False, i=i: self.mode.set_index(i))
+            v.addAction(a)
+        v.addSeparator()
+        ap = v.addMenu("Appearance")
+        grp = QActionGroup(self)
+        for lab, val in (("System", None), ("Light", "light"), ("Dark", "dark")):
+            a = QAction(lab, self, checkable=True)
+            a.setChecked(val is None)
+            a.triggered.connect(lambda _=False, val=val: self.set_appearance(val))
+            grp.addAction(a)
+            ap.addAction(a)
+        pb = mb.addMenu("&Playback")
+        ws = self.pages["workspace"]
+        for text, key, fn in (("Play / pause", "Space", ws.video.toggle_play),
+                              ("Previous frame", "Left", lambda: ws.video.step(-1)),
+                              ("Next frame", "Right", lambda: ws.video.step(1)),
+                              ("Back 10 frames", "Shift+Left", lambda: ws.video.step(-10)),
+                              ("Forward 10 frames", "Shift+Right", lambda: ws.video.step(10))):
+            a = QAction(text, self)
+            a.setShortcut(key)
+            a.setShortcutContext(Qt.ShortcutContext.WindowShortcut)
+            a.triggered.connect(fn)
+            pb.addAction(a)
+        h = mb.addMenu("&Help")
+        a = QAction(f"About {APP_NAME}", self)
+        a.triggered.connect(self._about)
+        h.addAction(a)
+
+    def set_appearance(self, val):
+        apply_theme(QApplication.instance(), val)
+        self.state.settings.setValue("appearance", val or "system")
+        ws = self.pages["workspace"]
+        ws.plots.redraw()
+        for c in ws.video.canvas.values():
+            c.update()
+
+    def import_recordings(self):
+        from .import_dialog import ImportDialog
+        if self.state.project is None:
+            QMessageBox.information(self, "Create a study first",
+                                    "Create a study (File > New study) to hold the imported trials and results.")
+            self.mode.set_index(1)
+            return
+        ImportDialog(self, self.state).exec()
 
     def _about(self):
         QMessageBox.about(self, APP_NAME, f"<b>{APP_NAME}</b> {__version__}<br>Video-based biomechanics for "
-                          "trekking-pole descent experiments (class project).<br><br>Pose estimation: MediaPipe Pose "
-                          "(Apache-2.0). See README and docs/methods.md for methods and limitations.")
+                          "trekking-pole descent experiments (CREATE Lab class project).<br><br>Body tracking: RTMPose / "
+                          "YOLOX via rtmlib (Apache-2.0), MediaPipe (Apache-2.0). See RESEARCH_PIPELINE.md.")
 
     def _project_changed(self):
         p = self.state.project
-        self.project_badge.setText(f"Study: {p.name}" if p else "No study open")
+        self.study_label.setText(f"Study: {p.name}  " if p else "No study open  ")
         if p:
             self.statusBar().showMessage(f"Opened {p.name}: {len(p.trials)} trials, "
                                          f"{sum(t.status == 'analysed' for t in p.trials)} analysed", 8000)
 
     def _open_trial(self, tid: str, page: str):
-        self.nav.setCurrentRow([k for _, k in PAGES].index(page))
-        self.pages[page].reload_trials()
-        self.pages[page].select_trial(tid)
+        self.mode.set_index(0)
+        self.pages["workspace"].browser.select_trial(tid)
+        self.pages["workspace"].open_trial(tid)
 
     def open_last(self):
         last = self.state.settings.value("last_project")

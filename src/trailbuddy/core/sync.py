@@ -164,3 +164,56 @@ def resample_to(t_src: np.ndarray, y_src: np.ndarray, t_dst: np.ndarray, max_gap
             y[gap > max_gap_s + 1e-9] = np.nan
             flat_out[:, j] = y
     return flat_out.reshape(out.shape)
+
+
+def visual_clap(pose, window_s: tuple[float, float] = (0.0, 5.0)) -> tuple[float | None, float]:
+    """Clap time from pose: the moment the wrists come closest together (relative to shoulder width)
+    after closing quickly. Returns (time_s or None, confidence 0..1).
+
+    Use when audio is missing or unreliable. Resolution = one video frame.
+    """
+    t = pose.t
+    m = (t >= window_s[0]) & (t <= window_s[1])
+    if m.sum() < 5:
+        return None, 0.0
+    lw, rw = pose.xy[m, 15], pose.xy[m, 16]
+    sw = np.linalg.norm(pose.xy[m, 11] - pose.xy[m, 12], axis=1)
+    d = np.linalg.norm(lw - rw, axis=1) / np.where(sw > 1, sw, np.nan)
+    if np.all(np.isnan(d)):
+        return None, 0.0
+    k = int(np.nanargmin(d))
+    dmin = float(d[k])
+    before = d[max(0, k - int(0.5 * pose.fps)):k]
+    rise = float(np.nanmax(before) - dmin) if len(before) and np.isfinite(before).any() else 0.0
+    conf = float(np.clip(rise, 0, 1) * np.clip(1 - dmin, 0, 1))
+    return float(t[m][k]), conf
+
+
+def estimate_drift(env_a: np.ndarray, env_b: np.ndarray, hop_s: float, offset_s: float,
+                   window_s: float = 4.0, pad: int = 50) -> dict:
+    """Clock-drift check: local A-B offsets near the start and the end of the overlap (envelope NCC).
+
+    Convention: A index = B index + lag, offset_s = lag * hop_s (event later in A by offset_s).
+    Returns start/end local offsets, their correlations and the drift in ms per minute. A drift below
+    one frame over the trial means no correction is needed (typical for phones over < 30 s).
+    """
+    from .dataset import envelope_ncc
+
+    lag = int(round(offset_s / hop_s))
+    n = int(window_s / hop_s)
+    i0, i1 = max(0, lag), min(len(env_a), len(env_b) + lag)
+    if i1 - i0 < 3 * n:
+        return {"drift_ms_per_min": None}
+    out = {}
+    for name, a0 in (("start", i0), ("end", i1 - n)):
+        a = env_a[a0:a0 + n]
+        b_start = max(0, a0 - lag - pad)
+        b = env_b[b_start:a0 - lag + n + pad]
+        r, l_s = envelope_ncc(a, b, max_lag_s=(n + 2 * pad) * hop_s, min_overlap_s=0.8 * window_s)
+        l = int(round(l_s / hop_s))
+        out[f"{name}_offset_s"] = (a0 - b_start + l) * hop_s
+        out[f"{name}_r"] = r
+    span_min = (i1 - i0) * hop_s / 60
+    ok = out["start_r"] > 0.3 and out["end_r"] > 0.3
+    out["drift_ms_per_min"] = (1000 * (out["end_offset_s"] - out["start_offset_s"]) / span_min) if ok else None
+    return out

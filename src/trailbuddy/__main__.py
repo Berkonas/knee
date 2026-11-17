@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -13,7 +14,6 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if "--check-pose" in argv:  # packaging smoke test: video encode + MediaPipe in the built app
         import tempfile
-        from pathlib import Path
 
         from .core import pose, video
         from .core.synthetic import render_frames, synthetic_descent
@@ -27,17 +27,26 @@ def main(argv: list[str] | None = None) -> int:
     from PySide6.QtWidgets import QApplication
 
     from .ui.main_window import MainWindow
-    from .ui.theme import QSS
+    from .ui.theme import apply_theme
 
     QApplication.setApplicationName("TrailBuddy Analyzer")
     QApplication.setOrganizationName("TrailBuddy")
     app = QApplication.instance() or QApplication(sys.argv)
     app.setStyle("Fusion")
-    app.setStyleSheet(QSS)
+    from PySide6.QtCore import QSettings
+    pref = QSettings("TrailBuddy", "Analyzer").value("appearance", "system")
+    apply_theme(app, None if pref in (None, "system") else pref)
     win = MainWindow()
     win.show()
     if "--no-restore" not in argv:
         win.open_last()
+    import logging
+    from .core.paths import user_data_dir, is_frozen
+    log_dir = (user_data_dir() if is_frozen() else Path(__file__).resolve().parents[2]) / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    logging.basicConfig(filename=log_dir / "app.log", level=logging.INFO,
+                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    sys.excepthook = lambda *exc: logging.getLogger("trailbuddy").error("Unhandled exception", exc_info=exc)
     if "--selftest" in argv:  # used by CI / packaging smoke tests
         from PySide6.QtCore import QTimer
         QTimer.singleShot(1500, app.quit)

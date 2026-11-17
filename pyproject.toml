@@ -15,6 +15,9 @@ dependencies = [
     "PySide6>=6.6",
     "imageio-ffmpeg>=0.5",
     "openpyxl>=3.1",
+    "pyqtgraph>=0.14.0",
+    "rtmlib>=0.0.16",
+    "onnxruntime>=1.24.3",
 ]
 
 [project.optional-dependencies]

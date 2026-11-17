@@ -54,6 +54,7 @@ class Participant:
     standard_pole_length_cm: float | None = None
     segments: dict = field(default_factory=dict)  # measured segment lengths, keys in SEGMENT_FIELDS (m)
     notes: str = ""
+    metrics_entered: bool = True  # False when mass/height are placeholders (e.g. after auto-import)
 
     def validate(self) -> None:
         if not PID_RE.match(self.id):
@@ -72,6 +73,7 @@ class CameraVideo:
     path: str
     role: str = "side"  # 'side' (sagittal) | 'front' | 'oblique'
     label: str = "Camera A"
+    meta: dict = field(default_factory=dict)  # resolution, fps, duration, device, creation time
 
 
 @dataclass

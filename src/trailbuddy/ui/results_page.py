@@ -13,8 +13,7 @@ from ..core.metrics import INFO
 from .components import Segmented
 from .project_page import table
 from .result_view import fmt
-from .single_page import open_folder
-from .widgets import MplCanvas, error_box
+from .widgets import MplCanvas, error_box, open_folder
 
 METRIC_CHOICES = ["quad_force_peak", "knee_ext_moment_peak", "knee_ext_impulse_per_step", "knee_ext_impulse_total",
                   "knee_neg_work", "knee_power_absorption_peak", "knee_flexion_peak", "knee_flexion_at_contact",
@@ -57,12 +56,12 @@ class ResultsPage(QWidget):
         sub.setWordWrap(True)
         lay.addWidget(sub)
         row = QHBoxLayout()
-        self.metric_label = QLabel("Metric")
-        row.addWidget(self.metric_label)
-        self.metric = QComboBox()
+        self.metric_lbl = QLabel("Metric")
+        row.addWidget(self.metric_lbl)
+        self.metric_box = QComboBox()
         for k in METRIC_CHOICES:
-            self.metric.addItem(f"{INFO[k].label} ({INFO[k].unit})", k)
-        row.addWidget(self.metric)
+            self.metric_box.addItem(f"{INFO[k].label} ({INFO[k].unit})", k)
+        row.addWidget(self.metric_box)
         row.addWidget(QLabel("Baseline"))
         self.baseline = QComboBox()
         row.addWidget(self.baseline)
@@ -86,7 +85,7 @@ class ResultsPage(QWidget):
         split.addWidget(self.tables)
         split.setSizes([480, 240])
         lay.addWidget(split, 1)
-        self.metric.currentIndexChanged.connect(self.update_views)
+        self.metric_box.currentIndexChanged.connect(self.update_views)
         self.baseline.currentIndexChanged.connect(self.update_views)
         state.resultsChanged.connect(self.refresh)
         state.projectChanged.connect(self.refresh)
@@ -112,12 +111,12 @@ class ResultsPage(QWidget):
 
     def _view_changed(self, i):
         uses_metric = VIEWS[i] in ("By condition", "Pole length", "Repetitions")
-        self.metric.setEnabled(uses_metric)
-        self.metric_label.setEnabled(uses_metric)
+        self.metric_box.setEnabled(uses_metric)
+        self.metric_lbl.setEnabled(uses_metric)
         self.update_views()
 
     def update_views(self, *_):
-        m = self.metric.currentData()
+        m = self.metric_box.currentData()
         info = INFO[m]
         view = VIEWS[self.view.index()]
         if view in ("By condition", "Pole length", "Repetitions"):

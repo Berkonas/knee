@@ -190,6 +190,37 @@ INFO: dict[str, MetricInfo] = {
         "Pole inclination from vertical at the start of each plant (+ = tip ahead).",
         "Pole angle determines how much of the pole force supports body weight.",
         "Technique differences.", "2D projection; requires pole tracking."),
+    "front_knee_fppa_peak": MetricInfo(
+        "Peak knee frontal-plane projection angle", "deg",
+        "Front view: largest deviation of the hip-knee-ankle line from straight (2D), either knee.",
+        "Shows whether the knee moves inward/outward while lowering; poles may stabilise the knee.",
+        "Differences in frontal-plane knee alignment between conditions.",
+        "A 2D projection, not 3D knee valgus; sensitive to camera angle and leg rotation."),
+    "front_trunk_lateral_lean_rom": MetricInfo(
+        "Trunk side-to-side sway (range)", "deg",
+        "Front view: range of the mid-hip to mid-shoulder line's tilt from vertical.",
+        "Less sway can indicate a steadier descent; poles add support points.",
+        "Whether poles change lateral trunk control.", "2D projection; arm swing can shift shoulder points."),
+    "front_pelvic_obliquity_rom": MetricInfo(
+        "Pelvic tilt range (frontal)", "deg", "Front view: range of the hip line's tilt from horizontal.",
+        "Pelvic drop reflects hip abductor control during single-leg support.",
+        "Differences in frontal-plane hip control.", "MediaPipe/RTMPose hip points are estimates under clothing."),
+    "front_step_width_ratio_mean": MetricInfo(
+        "Step width (relative to hip width)", "ratio",
+        "Front view: mean horizontal ankle separation divided by hip width.",
+        "Wider steps are a common stability strategy.", "Changes in base of support.",
+        "Scale-free ratio; perspective changes as the person approaches the camera."),
+    "front_pole_tip_spread_mean": MetricInfo(
+        "Pole tip spread (relative to shoulder width)", "ratio",
+        "Front view: mean distance between the two pole tips divided by shoulder width.",
+        "Describes how wide the poles are planted - part of planting technique.",
+        "Technique differences between conditions or pole lengths.", "Requires both poles tracked."),
+    "pole_plant_timing": MetricInfo(
+        "Pole plant timing vs foot strike", "s",
+        "Side view: time from the analysed foot's strike to the nearest pole plant (mean).",
+        "Describes arm-leg coordination: planting with or before the foot lets the pole share load at landing.",
+        "Coordination differences between conditions or pole lengths.",
+        "Depends on pole and foot contact detection from video (+-1-2 frames)."),
     "tibiofemoral_compression": MetricInfo(
         "Tibiofemoral compression", "N",
         "Joint contact force between femur and tibia.",
@@ -209,8 +240,10 @@ CATEGORIES: dict[str, list[str]] = {
                               "knee_flexion_rom", "hip_flexion_peak", "ankle_dorsiflexion_peak"],
     "Trunk, arms and poles": ["trunk_lean_mean", "shoulder_flexion_peak", "elbow_flexion_mean", "elbow_moment_peak",
                               "shoulder_moment_peak", "pole_support_fraction", "pole_contact_time",
-                              "pole_angle_at_contact"],
+                              "pole_angle_at_contact", "pole_plant_timing"],
     "Pace and rhythm": ["speed", "cadence", "step_time_mean", "step_time_cv", "stance_time_mean"],
+    "Front view (frontal plane)": ["front_knee_fppa_peak", "front_trunk_lateral_lean_rom", "front_pelvic_obliquity_rom",
+                                   "front_step_width_ratio_mean", "front_pole_tip_spread_mean"],
 }
 
 
@@ -223,6 +256,7 @@ class MetricValue:
     sd: float | None = None
     low: float | None = None     # sensitivity range
     high: float | None = None
+    view: str = "side"           # camera view the value comes from
 
     @property
     def info(self) -> MetricInfo:
@@ -232,4 +266,6 @@ class MetricValue:
         d = asdict(self)
         i = self.info
         d.update(label=i.label, unit=i.unit, evidence=KINDS[self.kind])
+        if self.key.startswith("front_"):
+            d["view"] = "front"
         return d
