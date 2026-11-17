@@ -191,10 +191,17 @@ def run_pair(project, trial, settings: AnalysisSettings, proc: dict | None = Non
         progress(0.92, "Computing biomechanics")
     ref = side_data or front_data
     pose_full = ref[0]
-    t0, t1 = trial.interval or [float(pose_full.t[0]), float(pose_full.t[-1])]
-    if side_data and front_data and not trial.interval:
-        f_t = front_data[0].t + off  # front clock -> side clock: analyse the common window by default
-        t0, t1 = max(t0, float(f_t[0])), min(t1, float(f_t[-1]))
+    from .events import descent_window
+    if trial.interval:
+        t0, t1 = trial.interval
+    else:
+        # default: the automatically detected descent (hip height falling), limited to the common window
+        win = descent_window(pose_full)
+        t0, t1 = (win[0], win[1]) if win else (float(pose_full.t[0]), float(pose_full.t[-1]))
+        trial.settings["interval_method"] = "auto: hip descent" if win else "whole recording (no clear descent)"
+        if side_data and front_data:
+            f_t = front_data[0].t + off  # front clock -> side clock
+            t0, t1 = max(t0, float(f_t[0])), min(t1, float(f_t[-1]))
     forces = load_force_csv(trial.settings["force_csv"]) if trial.settings.get("force_csv") else None
     if trial.stair.get("step_height_m") and trial.stair.get("n_steps") and settings.descent_height_m is None:
         settings.descent_height_m = float(trial.stair["step_height_m"]) * int(trial.stair["n_steps"])
@@ -216,17 +223,32 @@ def run_pair(project, trial, settings: AnalysisSettings, proc: dict | None = Non
                         poles_s[s_] = PoleTrack(pose_s.t, tip, None, conf, src, "auto+manual")
                     else:
                         poles_s[s_] = m_tr
-        uses = cond.uses_poles or pipeline.pole_present(poles_s)
+        detected = pipeline.pole_present(poles_s)
+        trial.settings["poles_detected"] = bool(detected)
+        if cond.code == "UNSET" and not detected:
+            res_note_cond = "No poles were detected in the side view: this looks like a no-poles trial."
+        elif cond.code == "UNSET":
+            res_note_cond = "Poles detected: assign the condition (standard / shorter / longer) on the Trial tab."
+        else:
+            res_note_cond = ""
+        uses = (cond.uses_poles and cond.code != "UNSET") or detected
         res = analysis.analyse(pose_s, part.body_mass_kg, part.height_m, settings, uses, poles_s, forces,
                                part.segments)
-        if uses and not cond.uses_poles:
+        if detected and not cond.uses_poles:
             res.notes.append("Poles were detected although the condition says 'no poles': check the condition.")
+        if res_note_cond:
+            res.notes.insert(0, res_note_cond)
     else:
         pose_f0 = pipeline.slice_pose(front_data[0], t0, t1)
         res = analysis.analyse(pose_f0, part.body_mass_kg, part.height_m,
                                AnalysisSettings(scale_method="none", side=settings.side), cond.uses_poles, None)
-        res.notes.append("No side view: sagittal angles below come from the FRONT camera and are not "
-                         "meaningful sagittal measures; kinetics unavailable.")
+        from .metrics import MetricValue
+        res.metrics = [MetricValue(m.key, None, "unavailable", "Needs a side-view recording (sagittal measure).")
+                       for m in res.metrics]
+        keep = ["time_s"]
+        res.timeseries = res.timeseries[keep]
+        res.notes.append("Front view only: sagittal angles, timing and kinetics need the side view and are not "
+                         "reported. Front-view (frontal-plane) measures are below.")
     if front_data:
         fa, fb = (t0 - off, t1 - off) if side_data else (t0, t1)
         pose_f = pipeline.slice_pose(front_data[0], fa, fb)

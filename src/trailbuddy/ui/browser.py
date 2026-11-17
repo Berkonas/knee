@@ -117,6 +117,8 @@ class ExperimentBrowser(QWidget):
                     tip.append(f"Pair match {t.sync['pair_score']:.2f} ({t.sync.get('pair_status')})")
                 if t.notes:
                     tip.append(t.notes)
+                if "poles_detected" in t.settings:
+                    tip.append("Poles detected in the video" if t.settings["poles_detected"] else "No poles detected")
                 ti.setToolTip(0, "\n".join(tip))
                 pi.addChild(ti)
                 for v in t.videos:

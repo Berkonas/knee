@@ -21,8 +21,14 @@ Every output carries one label. The app shows it as a coloured badge, and every 
 
 ## 2. Pose estimation and signal processing
 
-* **Landmarks.** MediaPipe Pose Landmarker (BlazePose GHUM, 33 landmarks) runs in video mode on every frame of
-  the analysis interval (`pose.estimate`). Frames with no detection are stored as NaN, and the app never fills them with invented values.
+* **Landmarks.** By default, YOLOX-m finds every person in each frame and RTMPose-m estimates 26 keypoints
+  (Halpe-26, including heels and big toes) with a confidence for each (`pose_rtm.estimate`, via rtmlib on ONNX
+  Runtime). The participant is locked as the largest, most confident person at the start, then followed frame by frame
+  by hip position and size, which ignores bystanders. MediaPipe Pose (33 landmarks) can be selected instead. Frames
+  with no target are stored as NaN, and the app never fills them with invented values.
+* **Spike removal.** A landmark is removed in any frame where it deviates from its 7-frame running median by more
+  than 6 robust SD *and* by more than 8% of leg length (`signal.despike`). Fast but genuine swing-phase motion is
+  kept.
 * **Confidence gate.** Any landmark with visibility below 0.5 is discarded (`kinematics.compute`).
 * **Gap filling.** Gaps of 0.1 s or less are filled by linear interpolation and flagged. Longer gaps stay empty (`signal.fill_gaps`).
 * **Filtering.** A 2nd-order Butterworth low-pass filter runs forward and backward, which gives zero phase lag
@@ -122,6 +128,32 @@ rather than reading absolute values.
 
 Negative power, where the knee flexes while an extensor moment acts, means the knee extensors are absorbing energy eccentrically.
 
+## 5e. Pole tracking (automatic)
+
+For each hand, the app looks for pole-coloured pixels (HSV gate) below the wrist and outside the torso. It finds
+straight segments with the probabilistic Hough transform and keeps a segment only if:
+
+* its line passes within 0.07 body heights of the wrist
+* it starts at the hand and does not continue above it, which rejects handrails and curtain folds
+* it points within 40° of vertical
+
+The tip is the lower end of the longest kept segment (`pole_auto.py`). Detections that jump in angle or position
+between frames, or last fewer than 5 frames, are removed. Manual clicks override automatic values frame by frame.
+Derived measures are the pole angle from vertical, the pole angle relative to the forearm, pole-tip contact
+intervals, and plant timing relative to the nearest foot strike.
+
+## 5f. Front-view (frontal-plane) measures
+
+These come from the front camera (`frontal.py`), all as 2D angles or scale-free ratios:
+
+* knee frontal-plane projection angle = 180° − ∠(hip, knee, ankle)
+* trunk lateral lean
+* pelvic tilt
+* step width ÷ hip width
+* pole tip spread ÷ shoulder width
+
+They are resampled onto the side-camera clock using the sync offset.
+
 ## 6. Upper-limb kinetics and pole force
 
 Ordinary video **cannot measure pole force**. The app accepts measured pole force from a load cell CSV,
@@ -162,7 +194,21 @@ ratings of perceived exertion.
   Karara, 1971/2015), the app reconstructs 3D hip, knee and ankle positions and reports knee flexion labelled *"calibrated,
   unvalidated"* until it has been checked against a known distance or angle.
 
-## 9. Two-camera synchronisation
+## 9. Two-camera pairing and synchronisation
+
+**Pairing.** The app pairs front and side recordings by sound (`dataset.pair_by_audio`):
+
+1. Compute 10 ms log-energy envelopes above 300 Hz.
+2. Take the normalised cross-correlation over the overlap at every lag within ±20 s.
+3. Make a one-to-one assignment that maximises total correlation (Hungarian algorithm), never pairing two different participants.
+
+Pairs are flagged *confident* or *review*. Recording time stamps are not used: they contradicted the audio in our
+session.
+
+**Visual clap.** This is the frame where the wrists are closest, relative to shoulder width, after closing quickly
+(`sync.visual_clap`). **Drift check:** the app compares local envelope offsets at the start and end of the overlap
+(`sync.estimate_drift`).
+
 
 Automatic sync (`sync.sync_audio`) works in five steps:
 

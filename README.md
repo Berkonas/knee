@@ -5,7 +5,7 @@
 A desktop app for our biomechanics class project. It measures how **trekking poles change knee loading during
 stair or downhill descent**, and whether that shifts load to the **arms and shoulders**.
 
-Load a phone video (or two), sync them with a clap, and the app tracks the body and the poles. It then computes
+Import your front and side phone videos. The app pairs and syncs them with the clap, then tracks the body and the poles in both views. It then computes
 joint angles and estimates knee extensor moment, quadriceps force and arm moments. Every number is labelled as
 *measured*, *video estimate*, *model estimate*, *scenario (assumed force)* or *unavailable*, so you always know how
 much to trust it.
@@ -43,44 +43,47 @@ You need about 2 GB of free disk space and internet for the first install.
 **Artifacts** section). These builds are unsigned, so see [Troubleshooting](docs/troubleshooting.md) for the
 one-time security prompt.
 
-## 2. Use it in 10 steps
+## 2. Use it
 
-1. **Study → New study…** Choose an empty folder and an experiment template (Experiment 1, 2 or 3; you can edit it later).
-2. **Add participant.** Use codes like P01, never names. Enter **body mass and height**. Measured segment lengths
-   (thigh, shank, …) are optional and make the scale more accurate.
-3. **Add one-camera trials…** Select your videos. Files named like `P01_C1_T01.mp4` fill in the participant,
-   condition and trial number automatically. For two views, use **Add two-camera trial…**
-4. **Open for analysis.** Play or step through the video and click **Set start** and **Set end** around the descent.
-5. **Scale.** For best accuracy, choose *Measured distance*, click **Pick 2 points** on something you measured
-   (such as a stair riser) and type its length. Otherwise the app uses the participant's height.
-6. **Two cameras only:** click **Detect clap from audio**. If that fails, mark the clap frame in each video and click
-   **Apply manual sync**. Check that both views show the same moment, then click **Use common window**.
-7. **Poles (optional).** Put bright tape on each pole tip. Click **Pick marker colour**, click the tape, then **Track marker**.
-   You can also click **Click to annotate** and mark the tip by hand.
-8. **External forces.** Pole force can't be seen on video. Choose a **scenario** (e.g. 10% body weight per
-   planted pole), or import measured force data.
-9. **Run analysis.** The **Report** opens with a card for every metric, each showing its evidence label and where
-   the value sits against published stair-descent ranges (below, typical or above). The report also has a movement
-   timeline, the leg's motion through stance, and the sensitivity analysis. Click the knee timeline under the video to jump to any moment.
-10. **Results** compares conditions within each participant:
-    * an **overview** of every metric, which highlights changes larger than that person's trial-to-trial noise
-    * **pole-length** response
-    * **repetition** trends
-    * the **knee vs. arm trade-off**
-    * stance curves
+1. **File → New study…** Choose an empty folder. Your results are stored there and never uploaded.
+2. **Import recordings…** (button at the bottom of the experiment browser) and choose the folder with your phone
+   videos. The app then:
+   * reads each file's metadata: resolution, frame rate, duration, device and HDR
+   * detects which recordings are **front** and **side** views from the person's posture
+   * groups recordings by **participant** using clothing colour
+   * **pairs** front and side recordings of the same trial by matching their sound
 
-    **Export all results…** writes the raw data, CSV files, an Excel workbook, PNG, SVG and PDF figures, and a plain-language summary.
+   Check the review table, fix anything wrong, then click **Create trials**. File names don't matter.
+3. Enter each participant's **body metrics**: right-click the participant, then **Body metrics…**. Mass and height are
+   needed for every force or moment.
+4. Click a trial in the browser. The front and side videos play **in sync** from one clock. Use Space, ← and →
+   (Shift for 10 frames), and the speed menu (0.1×–2×).
+5. **Sync** tab: **Audio clap** aligns the views automatically. Check that both views show the hands meeting.
+   **Visual clap** works without audio, and the ±1 frame buttons give frame-exact manual control.
+6. **Trial** tab: set the condition (no poles, standard, −5 cm, +5 cm…), the trial number and the analysis interval. Press
+   I and O at the cursor to set the start and end.
+7. **Analyse trial**, or **Analyse all trials**. The app tracks the body (RTMPose) and both poles in both views.
+   Tracking is cached, so changing biomechanics settings later is instant.
+8. Inspect the results:
+   * The overlays show the skeleton, the poles, the joint trajectories and live knee angles.
+   * The plots under the video are linked to it: click a plot to jump the video, or play the video to move the plot cursor.
+   * The **Measures** tab lists the values at the cursor and the trial summary, with evidence labels and the camera view.
+9. **Export trial…** writes the time-series CSV, the summary, events, figures, an annotated video and the processing
+   settings into `<folder>/<participant>/<trial>/`.
+10. **Compare** (top of the window) compares conditions within each participant across every metric. **Export all
+    results…** writes the study-level tables, an Excel workbook and figures.
 
-The **Create demo study** button builds a study from synthetic data so you can try the Results page right away.
-These are not real results.
+**Create demo study** (on the Study page) builds a study from synthetic data, so you can try Compare without
+recordings.
 
 ## 3. What the app measures
 
 | Quantity | How | Evidence label |
 |---|---|---|
-| Knee, hip, ankle, trunk, shoulder, elbow angles | MediaPipe pose landmarks, filtered, 2D | Video estimate |
+| Knee, hip, ankle, trunk, shoulder, elbow angles; angular velocity; segment orientation | RTMPose landmarks (side view), filtered, 2D | Video estimate |
+| Knee frontal-plane projection angle, trunk sway, pelvic tilt, step width, pole spread | RTMPose landmarks (front view), 2D, scale-free | Video estimate |
 | Step time, stance time, cadence, speed | Foot speed (velocity threshold); scale | Video estimate |
-| Pole tip position, angle, contact timing | Colour marker or manual clicks | Video estimate (awaiting validation) |
+| Pole tip, axis angle, contact timing, plant timing vs foot strike | Automatic hand-anchored pole detection (or manual clicks) | Video estimate (checked visually, not yet validated against markers) |
 | Knee extensor moment | Inverse dynamics with force-plate data, **or** a quasi-static model with an assumed foot force | Model or Scenario |
 | Quadriceps force | Knee moment ÷ patellar tendon moment arm (5 cm; 4–6 cm range) | Model or Scenario |
 | Knee negative work, cumulative knee angular impulse | Mechanical-demand metrics (not fatigue) | Model or Scenario |
@@ -96,7 +99,8 @@ All equations, assumptions and references are in **[docs/methods.md](docs/method
 * [Features and limitations](docs/features-and-limitations.md): what is implemented, tested, or awaiting validation
 * [Troubleshooting](docs/troubleshooting.md)
 * [Data formats](docs/data-formats.md): output files and how to import force data
-* [Developer guide](docs/development.md): setup, tests, building, project structure
+* [Research pipeline](RESEARCH_PIPELINE.md): short methods description for the report
+* [Developer guide](DEVELOPER.md): setup, architecture, packaging, troubleshooting
 * [Literature](docs/research/literature.md) and [open-source tool survey](docs/research/open-source-tools.md)
 * [Project brief summary](docs/project/assignment-summary.md) and our experimental protocol (`docs/project/`)
 * `docs/TrailBuddy_Methods_Summary.docx`: a short, readable Word summary of the math, logic and references
@@ -108,7 +112,8 @@ Participant videos and results are stored only in the study folder you choose. T
 
 ## 6. Credits and licences
 
-The app's code is MIT-licensed. It builds on MediaPipe (Apache-2.0), OpenCV (Apache-2.0), PySide6/Qt (LGPL-3.0),
+The app's code is MIT-licensed. It builds on RTMPose and YOLOX via rtmlib (Apache-2.0; models from OpenMMLab,
+Apache-2.0), ONNX Runtime (MIT), MediaPipe (Apache-2.0), pyqtgraph (MIT), OpenCV (Apache-2.0), PySide6/Qt (LGPL-3.0),
 NumPy, SciPy, pandas and matplotlib (BSD-style), openpyxl (MIT) and imageio-ffmpeg (BSD; it bundles an FFmpeg binary).
 Biomechanics references are listed in [docs/methods.md](docs/methods.md). This is a class project, and the
 TrailBuddy scenario is fictional.

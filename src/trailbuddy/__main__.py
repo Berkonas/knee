@@ -22,7 +22,9 @@ def main(argv: list[str] | None = None) -> int:
         with tempfile.TemporaryDirectory() as td:
             v = video.write_video(render_frames(p), Path(td) / "v.mp4", 30)
             ps = pose.estimate(v, 0, 5, "full")
-        print(f"pose check ok: {ps.n_frames} frames processed")
+            from .core import pose_rtm
+            pr = pose_rtm.estimate(v, 0, 5)
+        print(f"pose check ok: MediaPipe {ps.n_frames} frames, RTMPose {pr.n_frames} frames processed")
         return 0
     from PySide6.QtWidgets import QApplication
 

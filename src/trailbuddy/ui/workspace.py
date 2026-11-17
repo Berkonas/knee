@@ -27,6 +27,17 @@ from .widgets import Worker, error_box, start_worker
 PROC_DEFAULT = {"backend": "rtmpose", "mode": "balanced", "stride": 1}
 
 
+def _fit(table: QTableWidget) -> None:
+    """First column takes the remaining width (long names elide with …), the others fit their content."""
+    h = table.horizontalHeader()
+    h.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+    h.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+    table.setTextElideMode(Qt.TextElideMode.ElideRight)
+    table.setWordWrap(False)
+    table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    table.verticalHeader().setDefaultSectionSize(26)
+
+
 def card(title: str | None = None) -> tuple[QFrame, QVBoxLayout]:
     f = QFrame()
     f.setObjectName("card")
@@ -101,16 +112,16 @@ class Inspector(QWidget):
         self.live = QTableWidget(0, 3)
         self.live.setHorizontalHeaderLabels(["Measure", "Value", "View"])
         self.live.verticalHeader().setVisible(False)
-        self.live.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        _fit(self.live)
         self.live.setMinimumHeight(250)
         self.live.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         cv.addWidget(self.live)
         v.addWidget(c)
         c, cv = card("Trial summary")
-        self.summary = QTableWidget(0, 4)
-        self.summary.setHorizontalHeaderLabels(["Metric", "Value", "Unit", "Type"])
+        self.summary = QTableWidget(0, 3)
+        self.summary.setHorizontalHeaderLabels(["Metric", "Value", "Type"])
         self.summary.verticalHeader().setVisible(False)
-        self.summary.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        _fit(self.summary)
         self.summary.setMinimumHeight(320)
         self.summary.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         cv.addWidget(self.summary)
@@ -278,6 +289,9 @@ class WorkspacePage(QWidget):
         self.browser.setMinimumWidth(220)
         self.hsplit.addWidget(self.browser)
         center = QWidget()
+        center.setObjectName("workspaceCenter")
+        center.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.browser.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         cl = QVBoxLayout(center)
         cl.setContentsMargins(6, 10, 6, 10)
         cl.setSpacing(6)
@@ -300,9 +314,11 @@ class WorkspacePage(QWidget):
         cl.addWidget(self.vsplit, 1)
         self.hsplit.addWidget(center)
         self.inspector = Inspector(self)
+        self.inspector.setObjectName("inspector")
+        self.inspector.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.inspector.setMinimumWidth(320)
         self.hsplit.addWidget(self.inspector)
-        self.hsplit.setSizes([250, 900, 360])
+        self.hsplit.setSizes([240, 860, 400])
         self.hsplit.setStretchFactor(1, 1)
         outer.addWidget(self.hsplit)
         # wiring
@@ -441,14 +457,14 @@ class WorkspacePage(QWidget):
         from PySide6.QtGui import QColor
         for r, m in enumerate(rows):
             info = INFO[m.key]
-            val = "–" if m.value is None else fmt(m.value)
-            items = [info.label, val, info.unit, SHORT_KINDS[m.kind]]
+            val = "–" if m.value is None else f"{fmt(m.value)} {info.unit}"
+            items = [info.label, val, SHORT_KINDS[m.kind]]
             for c_i, txt in enumerate(items):
                 it = QTableWidgetItem(txt)
                 if c_i == 0:
                     it.setToolTip(f"{info.what}\n\nWhy: {info.why}\nCannot conclude: {info.not_conclude}"
                                   + (f"\n\nNote: {m.note}" if m.note else "") + f"\nView: {m.view}")
-                if c_i == 3:
+                if c_i == 2:
                     bg, fg = EVIDENCE_COLORS[m.kind]
                     it.setBackground(QColor(bg))
                     it.setForeground(QColor(fg))
@@ -640,11 +656,15 @@ class WorkspacePage(QWidget):
         self.form.store_into(self.trial)
         trial, proc = self.trial, self.proc()
         self.worker = Worker(lambda progress, cancelled: run_pair(self.project, trial, settings, proc, progress, cancelled))
-        self.worker.progress.connect(lambda f, m: (self.inspector.progress.setValue(int(100 * f)), self.inspector.msg.setText(m)))
+        self.worker.progress.connect(self._on_progress)  # bound method -> queued to the UI thread
         self.worker.finished.connect(self._done)
         self.worker.failed.connect(self._failed)
         self._busy(True)
         self.thread = start_worker(self, self.worker)
+
+    def _on_progress(self, f: float, m: str):
+        self.inspector.progress.setValue(int(100 * f))
+        self.inspector.msg.setText(m)
 
     def _done(self, res):
         self._busy(False)
@@ -687,7 +707,7 @@ class WorkspacePage(QWidget):
             return done, failed
 
         self.worker = Worker(job)
-        self.worker.progress.connect(lambda f, m: (self.inspector.progress.setValue(int(100 * f)), self.inspector.msg.setText(m)))
+        self.worker.progress.connect(self._on_progress)  # bound method -> queued to the UI thread
         self.worker.finished.connect(self._all_done)
         self.worker.failed.connect(self._failed)
         self._busy(True)

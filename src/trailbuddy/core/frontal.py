@@ -45,6 +45,8 @@ def analyse_front(pose: PoseSeries, poles: dict[str, PoleTrack] | None = None, c
     ts["front_pelvic_obliquity_deg"] = np.degrees(np.arctan2(hv[:, 1], np.abs(hv[:, 0]) + 1e-9))
     shoulder_w = np.linalg.norm(P("left", "shoulder") - P("right", "shoulder"), axis=1)
     hip_w = np.linalg.norm(hv, axis=1)
+    shoulder_w = np.where(shoulder_w > 1, shoulder_w, np.nan)   # avoid division by ~0 (side-on / missing)
+    hip_w = np.where(hip_w > 1, hip_w, np.nan)
     ts["front_step_width_ratio"] = np.abs(P("left", "ankle")[:, 0] - P("right", "ankle")[:, 0]) / hip_w
     tips = {}
     for s, tr in (poles or {}).items():
@@ -63,9 +65,18 @@ def analyse_front(pose: PoseSeries, poles: dict[str, PoleTrack] | None = None, c
         M.append(MetricValue(key, float(fn(v)) if len(v) else None, "video" if len(v) else "unavailable",
                              note or ("" if len(v) else "Not visible in the front view.")))
 
-    fppa = np.nanmax(np.abs(np.stack([df.front_left_knee_fppa_deg, df.front_right_knee_fppa_deg])), axis=0) \
-        if np.isfinite(df[["front_left_knee_fppa_deg", "front_right_knee_fppa_deg"]].to_numpy()).any() else np.full(len(df), np.nan)
-    mv("front_knee_fppa_peak", fppa, np.max, "larger of the two knees")
+    # Robust peak: 90th percentile over frames where hip, knee and ankle of that leg are confidently tracked
+    vis = pose.visibility
+    peaks = []
+    for s_ in ("left", "right"):
+        good = np.min(vis[:, [idx(s_, "hip"), idx(s_, "knee"), idx(s_, "ankle")]], axis=1) >= 0.7
+        v = df[f"front_{s_}_knee_fppa_deg"].to_numpy()[good]
+        v = v[np.isfinite(v)]
+        if len(v) >= 10:
+            peaks.append(float(np.percentile(np.abs(v), 90)))
+    M.append(MetricValue("front_knee_fppa_peak", max(peaks) if peaks else None, "video" if peaks else "unavailable",
+                         "90th percentile of confidently tracked frames, larger of the two knees" if peaks
+                         else "Knees not confidently tracked in the front view."))
     mv("front_trunk_lateral_lean_rom", df.front_trunk_lateral_lean_deg.to_numpy(), np.ptp)
     mv("front_pelvic_obliquity_rom", df.front_pelvic_obliquity_deg.to_numpy(), np.ptp)
     mv("front_step_width_ratio_mean", df.front_step_width_ratio.to_numpy(), np.mean)

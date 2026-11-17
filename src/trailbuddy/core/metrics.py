@@ -98,12 +98,12 @@ INFO: dict[str, MetricInfo] = {
         "Only the horizontal component; accuracy depends on the scale calibration."),
     "cadence": MetricInfo(
         "Cadence", "steps/min",
-        "Steps per minute from detected foot contacts.",
+        "Steps per minute = 120 / mean stride time of the analysed (camera-side) foot.",
         "Strategy/pace check; a confounder of load comparisons.",
         "Whether stepping rhythm changed with poles.",
         "Event detection from video is approximate (about +-1-2 frames)."),
     "step_time_mean": MetricInfo(
-        "Mean step time", "s", "Time between contacts of alternating feet.",
+        "Mean step time", "s", "Half the mean stride time of the analysed foot (robust to the hidden far foot).",
         "Pace and rhythm.", "Rhythm differences.", "Approximate event timing from video."),
     "step_time_cv": MetricInfo(
         "Step time variability (CV)", "%",
@@ -191,8 +191,9 @@ INFO: dict[str, MetricInfo] = {
         "Pole angle determines how much of the pole force supports body weight.",
         "Technique differences.", "2D projection; requires pole tracking."),
     "front_knee_fppa_peak": MetricInfo(
-        "Peak knee frontal-plane projection angle", "deg",
-        "Front view: largest deviation of the hip-knee-ankle line from straight (2D), either knee.",
+        "Knee frontal-plane projection angle (90th pct)", "deg",
+        "Front view: 90th percentile of the hip-knee-ankle deviation from straight (2D), larger of the two knees, "
+        "over confidently tracked frames of the descent.",
         "Shows whether the knee moves inward/outward while lowering; poles may stabilise the knee.",
         "Differences in frontal-plane knee alignment between conditions.",
         "A 2D projection, not 3D knee valgus; sensitive to camera angle and leg rotation."),

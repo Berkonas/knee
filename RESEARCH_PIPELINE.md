@@ -1,0 +1,151 @@
+# Research pipeline: video-based analysis of stair descent with trekking poles
+
+## Overview
+
+**TrailBuddy Analyzer** is a desktop application written for this project. It turns two ordinary smartphone
+videos of each stair-descent trial into time-resolved, view-labelled kinematic measures for the body and the trekking
+poles. It also gives clearly labelled, assumption-based estimates of knee extensor demand. We use video because it is
+non-invasive, portable and available in the CREATE Lab, and because it lets us compare conditions within each
+participant (no poles, standard poles, shorter and longer poles). Video cannot measure force. Every output is
+therefore tagged as a *video estimate*, a *model estimate* (when measured forces are supplied) or a *scenario*
+(when a force is assumed).
+
+## Experimental dataset
+
+* Three participants (P01–P03), each descending the CREATE Lab stairs several times.
+* Two phones on tripods recorded each trial:
+  * **Front view:** iPhone 11 Pro, 1920×1080, 59.94 fps, H.264
+  * **Side view:** iPhone 15 Pro Max, 1920×1080, 59.94 fps, 10-bit HEVC HLG
+* An operator clapped once at the start of each recording to synchronise the two views.
+* The session folder holds 23 files. Two side files are aborted recordings (under 0.2 s). The app pairs 8 trials
+  front + side, 7 of them with high confidence. Three front-only and two side-only recordings of P03 have no
+  partner with matching audio, and they are analysed as single-view trials.
+
+## Software
+
+| Purpose | Tool (version) | Licence |
+|---|---|---|
+| Application and interface | Python 3.12, PySide6 / Qt (6.12), pyqtgraph (0.14) | LGPL-3.0 / MIT |
+| Person detection + 2D whole-body keypoints | YOLOX-m and RTMPose-m (Halpe-26 keypoints incl. heels and toes) via rtmlib 0.0.16 on ONNX Runtime 1.32 [1, 2] | Apache-2.0 / MIT |
+| Alternative pose backend | MediaPipe Pose Landmarker 1.2 [3] | Apache-2.0 |
+| Video and audio decoding | OpenCV 5.0, FFmpeg (bundled by imageio-ffmpeg 0.8) | Apache-2.0 / LGPL |
+| Signal processing and statistics | NumPy 2.5, SciPy 1.18, pandas 3.1 | BSD |
+| Figures and tables | matplotlib 3.11, openpyxl 3.1 | PSF-based / MIT |
+
+We evaluated OpenCap, OpenSim, Sports2D, Pose2Sim and AnyBody (see `docs/research/open-source-tools.md`). They were not
+used, either because they need calibrated multi-camera 3D capture or because they require a commercial licence.
+We chose RTMPose over MediaPipe after a side-by-side check on our side-view frames: MediaPipe misplaced the hips and
+knees on loose, light-coloured trousers, while RTMPose found the knees, heels and toes.
+
+## Processing pipeline
+
+1. **Import and organisation.**
+   * Container metadata is read with FFmpeg: resolution, frame rate, duration, codec, HDR, device and creation time.
+     GPS metadata is never read.
+   * Recordings under 1 s are excluded.
+   * The camera view is classified from the person's posture: front if shoulder width divided by torso height is
+     above 0.4, side if it is below 0.3. The result is checked by a majority vote per device.
+   * Participants are grouped by k-means clustering of the median clothing colour (CIELAB) of the torso and thighs.
+2. **Pairing.**
+   * Recording time stamps contradicted the true order, so front and side recordings are paired by their sound.
+   * For every front–side candidate, the app computes the normalised cross-correlation of 10 ms log-energy
+     envelopes (high-pass above 300 Hz) over lags of ±20 s.
+   * A one-to-one assignment then maximises the total correlation (Hungarian algorithm), never pairing different
+     participants. Pairs with r ≥ 0.7 and a clear margin over the alternatives are *confident*. Pairs with r < 0.6
+     are rejected.
+   * Users can correct any pairing.
+3. **Synchronisation.**
+   * The clap is the strongest broadband onset (above 1 kHz) in the first 5 s of each track. It is accepted when it
+     agrees within 50 ms with the whole-recording envelope correlation.
+   * Visual alternative: the frame where the two wrists are closest after closing quickly.
+   * Manual adjustment works in steps of one frame.
+   * Clock drift is checked by comparing local offsets at the start and end of each recording, and was below one
+     frame in our trials.
+   * Different frame rates are handled by mapping both cameras to one clock in seconds.
+4. **Person and pose tracking.**
+   * YOLOX detects every person in a frame, and RTMPose estimates 26 keypoints with a confidence for each.
+   * The participant is locked as the largest, most confident person in the first frames. In later frames the app
+     follows the detection whose hip centre and size are closest to the previous frame, which rejects people walking
+     behind the stairs.
+   * If the target is lost, the frame is left empty.
+5. **Pole tracking.**
+   * For each hand, pole-coloured pixels (HSV) outside the torso are searched below the wrist.
+   * Straight segments are found with the probabilistic Hough transform.
+   * A segment is kept only if:
+     * it lies on a line passing within 0.07 body heights of the wrist
+     * it starts at the hand and does not continue above it, which rejects handrails and curtain folds
+     * it points within 40° of vertical
+   * The tip is the lower end of the longest kept segment.
+   * Detections are removed if they jump in angle or position between frames, or last fewer than five frames.
+   * Users can override any frame with a manual click.
+6. **Signal conditioning.**
+   * Keypoints below 0.5 confidence are removed.
+   * Isolated spikes are removed: a deviation from the 7-frame running median larger than 6 robust SD and larger
+     than 8% of leg length.
+   * Gaps of 0.1 s or less are filled linearly and flagged. Longer gaps stay missing.
+   * Trajectories are low-pass filtered with a zero-lag 2nd-order Butterworth filter at 6 Hz [4].
+7. **Biomechanical calculations.** Details are in the table below and in `docs/methods.md`.
+8. **Export.** For each trial the app writes the time-series CSV, a summary table with evidence label and camera
+   view, events, figures, an annotated video and a JSON file of all processing settings. For the study it writes
+   within-participant comparison tables, an Excel workbook and figures.
+
+## Measurements
+
+| Measure | Definition | Unit | View |
+|---|---|---|---|
+| Knee / hip flexion, ankle dorsiflexion | θ_thigh − θ_shank; θ_thigh − θ_trunk; 90° − (θ_shank − θ_foot), segment angles from image coordinates | deg | side |
+| Trunk lean; shoulder flexion; elbow flexion | trunk from vertical; upper arm vs trunk; 180° − ∠(shoulder, elbow, wrist) | deg | side |
+| Angular velocity | central difference of filtered joint angles | deg/s | side |
+| Segment orientation | thigh, shank, upper arm, forearm from vertical | deg | side |
+| Peak knee flexion, flexion at foot contact, range of motion | from the knee angle time series during stance | deg | side |
+| Foot contacts, stance and step time, cadence | foot midpoint speed < 15% of its 95th percentile for ≥ 0.08 s [5] | s, steps/min | side |
+| Pole angle; pole contact time; plant timing | wrist→tip axis from vertical; stationary tip; plant time minus nearest foot strike | deg, s | side / front |
+| Knee frontal-plane projection angle | 180° − ∠(hip, knee, ankle) | deg | front |
+| Trunk sway, pelvic tilt range | mid-hip→mid-shoulder from vertical; hip line from horizontal | deg | front |
+| Step width, pole tip spread | ankle separation / hip width; tip separation / shoulder width | ratio | front |
+| Knee extensor moment (scenario) | F·(x_knee − x_COP), with F = body weight minus assumed pole support, quasi-static | N·m/kg | side + model |
+| Quadriceps force (scenario) | knee moment / patellar-tendon moment arm (5 cm, sensitivity range 4–6 cm) [6] | N, ×BW | side + model |
+| Mechanical demand | cumulative knee extensor angular impulse; negative knee work; peak power absorption | N·m·s/kg, J/kg, W/kg | side + model |
+
+## Validation and limitations
+
+* **2D only.** All angles are projections onto each camera's image plane. They equal sagittal (side) or frontal
+  (front) angles only when the camera is perpendicular to that plane. The cameras were not calibrated, so we report
+  no 3D kinematics and no distances in metres unless a scene distance is calibrated. DLT triangulation is implemented
+  but needs ≥ 6 surveyed control points, and its output is labelled *unvalidated*.
+* **Forces are not measured.** Knee moments and muscle forces come from a stated scenario model with sensitivity
+  ranges. They are suitable only for comparing conditions within a participant. Joint contact force and fatigue are
+  not estimated.
+* **Tracking uncertainty.** The app reports keypoint confidence, detection rate, the percentage of removed spikes and
+  of gap-filled samples, and pole tracking coverage and confidence for each trial. Pole detection relies on the
+  colour of our poles. It was checked visually on frames from all three participants (it correctly found no pole in
+  trials without poles), but it has not been validated against reference markers.
+* **Reliability.** Trials are averaged within each participant. A change between conditions is called *larger than
+  noise* only when it exceeds 1.96·√(SD_b²/n_b + SD_c²/n_c) of that participant's repeated trials [7]. With n = 3
+  we make no population inferences.
+* **Automated tests.** The test suite checks the calculations against analytic geometry (angles to < 0.01°), a static
+  hand calculation and a swinging pendulum (inverse dynamics), synthetic clap offsets (< 8 ms), known envelope lags
+  (pairing), rendered pole frames, and the interface workflows.
+
+## Reproducibility
+
+The default processing settings are:
+
+* tracking with RTMPose-m + YOLOX-m ("balanced"), every frame, CPU
+* keypoint confidence ≥ 0.5
+* spike removal: k = 6 robust SD, a 7-frame window, and a floor of 8% of leg length
+* gap filling up to 0.1 s, and a 6 Hz Butterworth filter
+* a pole hue of 95–150 (OpenCV), saturation ≥ 45 and value ≥ 55, a maximum pole angle of 40°, and a minimum run of 5 frames
+* audio envelopes with a 10 ms hop and a 300 Hz high-pass
+
+Every exported trial includes `processing_settings.json` with these values, the sync offset and method, the
+pairing score and the software version. Dependencies are pinned in `uv.lock`.
+
+**References.**
+[1] Jiang T. et al. (2023) RTMPose. arXiv:2303.07399.
+[2] Ge Z. et al. (2021) YOLOX. arXiv:2107.08430.
+[3] Bazarevsky V. et al. (2020) BlazePose. arXiv:2006.10204.
+[4] Winter D.A. (2009) *Biomechanics and Motor Control of Human Movement*, 4th ed.
+[5] Zeni J.A. et al. (2008) *Gait Posture* 27:710–714.
+[6] Tsaopoulos D.E. et al. (2009) *Eur J Appl Physiol* 105:809–814; Krevolin J.L. et al. (2004) *J Biomech* 37:785–788.
+[7] Hopkins W.G. (2000) *Sports Med* 30:1–15.

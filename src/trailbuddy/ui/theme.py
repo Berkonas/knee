@@ -58,7 +58,9 @@ def build_qss(m: str) -> str:
     return f"""
 * {{ color: {t['ink']}; }}
 QWidget {{ font-size: 13px; }}
-QMainWindow, QWidget#page, QWidget#workspace {{ background: {t['bg']}; }}
+QMainWindow, QWidget#page, QWidget#workspace, QWidget#workspaceCenter, QWidget#inspector {{ background: {t['bg']}; }}
+QWidget#browserPanel {{ background: {t['sidebar']}; border-right: 1px solid {t['line']}; }}
+QStackedWidget {{ background: transparent; }}
 QSplitter::handle {{ background: {t['bg']}; }}
 QSplitter::handle:hover {{ background: {t['accent_soft']}; }}
 QToolBar {{ background: {t['surface']}; border: none; border-bottom: 1px solid {t['line']}; padding: 4px 8px; spacing: 6px; }}

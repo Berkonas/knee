@@ -6,15 +6,17 @@ from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs
 
 ROOT = Path(SPECPATH).parent
 datas = [(str(ROOT / "assets"), "assets")]
-models = list((ROOT / "models").glob("*.task"))
-if models:
-    datas.append((str(ROOT / "models"), "models"))
+if any((ROOT / "models").rglob("*.task")) or any((ROOT / "models").rglob("*.onnx")):
+    datas.append((str(ROOT / "models"), "models"))   # pose models bundled so the app works offline
 datas += collect_data_files("mediapipe")
 datas += collect_data_files("imageio_ffmpeg")
-binaries = collect_dynamic_libs("mediapipe")
+datas += collect_data_files("rtmlib")
+datas += collect_data_files("pyqtgraph")
+binaries = collect_dynamic_libs("mediapipe") + collect_dynamic_libs("onnxruntime")
 
 a = Analysis([str(ROOT / "packaging" / "launch.py")], pathex=[str(ROOT / "src")], binaries=binaries, datas=datas,
-             hiddenimports=["trailbuddy", "openpyxl", "matplotlib.backends.backend_qtagg"],
+             hiddenimports=["trailbuddy", "openpyxl", "matplotlib.backends.backend_qtagg", "rtmlib", "onnxruntime",
+                            "pyqtgraph", "scipy.optimize", "scipy.cluster.vq"],
              excludes=["tkinter", "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.Qt3DCore"])
 pyz = PYZ(a.pure)
 icon = str(ROOT / "assets" / ("icon.icns" if sys.platform == "darwin" else "icon.ico"))

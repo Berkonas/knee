@@ -57,7 +57,7 @@ class DataPlots(QWidget):
         self.pw.setMenuEnabled(False)
         self.pw.showGrid(x=True, y=True, alpha=0.15)
         self.pw.setLabel("bottom", "Time", units="s")
-        self.legend = self.pw.addLegend(offset=(10, 6), labelTextSize="9pt")
+        self.legend = self.pw.addLegend(offset=(-10, 6), labelTextSize="9pt")
         lay.addWidget(self.pw, 1)
         self.cursor = pg.InfiniteLine(angle=90, movable=True, pen=pg.mkPen("#B3261E", width=1.5))
         self.cursor.sigPositionChanged.connect(lambda ln: self._cursor_moved(ln.value()))

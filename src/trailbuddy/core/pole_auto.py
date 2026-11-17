@@ -33,6 +33,8 @@ from .video import FrameReader
 
 @dataclass
 class PoleColour:
+    edges_fallback: bool = False  # Canny-edge fallback for uncoloured poles: off by default because trouser
+                                  # seams and stair edges produce false shafts (seen in our P02 recordings)
     hue_low: int = 95       # OpenCV hue 0-179; 95-150 covers blue to violet
     hue_high: int = 150
     sat_min: int = 45
@@ -71,7 +73,7 @@ def detect_in_frame(frame: np.ndarray, wrist: np.ndarray, body_h: float, exclude
         return None
     base = mask if mask is not None else evidence_mask(frame, colour)
     best = None
-    for method in ("colour", "edges"):
+    for method in (("colour", "edges") if colour.edges_fallback else ("colour",)):
         if method == "colour":
             m = base[y0:y1, x0:x1].copy()
         else:
@@ -171,10 +173,27 @@ def track_poles(video: str, pose: PoseSeries, frame0: int = 0, colour: PoleColou
             progress(k / n)
     reader.close()
     tracks = {}
+    from .signal import despike
     for side, d in out.items():
         tip = d["tip"].copy()
-        # outlier rejection: tip jumps larger than 0.25 body heights between frames are removed
-        tracks[side] = PoleTrack(pose.t.copy(), tip, None, d["conf"], d["src"], method="auto_wrist_ray")
+        # temporal outlier rejection: the pole angle cannot jump between neighbouring frames (60 fps).
+        wr = pose.xy[:, idx(side, "wrist")]
+        v = tip - wr
+        ang = np.degrees(np.arctan2(v[:, 0], v[:, 1]))
+        _, bad_a = despike(ang, k=5.0, win=9, floor=12.0)
+        _, bad_x = despike(tip[:, 0], k=5.0, win=9, floor=60.0)
+        _, bad_y = despike(tip[:, 1], k=5.0, win=9, floor=60.0)
+        bad = bad_a | bad_x | bad_y
+        # isolated detections (< 5 consecutive frames) are not trusted
+        ok = np.isfinite(tip[:, 0]) & ~bad
+        edges = np.flatnonzero(np.diff(np.concatenate(([0], ok.astype(int), [0]))))
+        for a, b in zip(edges[::2], edges[1::2]):
+            if b - a < 5:
+                ok[a:b] = False
+        tip[~ok] = np.nan
+        conf = np.where(ok, d["conf"], 0.0)
+        src = np.where(ok, d["src"], 0)
+        tracks[side] = PoleTrack(pose.t.copy(), tip, None, conf, src, method="auto_wrist_segment")
     if progress:
         progress(1.0)
     return tracks

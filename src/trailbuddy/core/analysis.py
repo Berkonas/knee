@@ -36,8 +36,8 @@ class AnalysisSettings:
     max_gap_s: float = 0.1
     scale_method: str = "height"          # 'height' | 'points' | 'none'
     scale_m_per_px: float | None = None   # used when scale_method == 'points'
-    contact_rel_threshold: float = 0.15
-    contact_min_duration_s: float = 0.08
+    contact_rel_threshold: float = 0.2
+    contact_min_duration_s: float = 0.12
     support_model: str = "static"         # 'static' (m*g) | 'dynamic' (m*(g+a_COM))
     cop_fraction: float = 0.5             # assumed COP position heel(0) -> toe(1)
     moment_arm_m: float = MOMENT_ARM_NOMINAL_M
@@ -161,8 +161,9 @@ def analyse(pose: PoseSeries, body_mass: float, height_m: float, settings: Analy
     M.append(MetricValue("elbow_flexion_mean", float(np.nanmean(a[f"{side}_elbow_flexion"])), "video", f"{side} arm"))
     M.append(MetricValue("speed", kmod.walking_speed(kin), "video" if scale else "unavailable",
                          "" if scale else "Needs a scale."))
-    M.append(MetricValue("cadence", gait.cadence_steps_per_min(), "video"))
-    st = gait.step_times()
+    M.append(MetricValue("cadence", gait.cadence_steps_per_min(side), "video", f"from {side} foot strides"))
+    sr = gait.stride_times(side)
+    st = sr / 2.0 if len(sr) else gait.step_times()
     M.append(MetricValue("step_time_mean", float(st.mean()) if len(st) else None, "video",
                          sd=float(st.std(ddof=1)) if len(st) > 1 else None))
     M.append(MetricValue("step_time_cv", float(100 * st.std(ddof=1) / st.mean()) if len(st) > 2 else None,

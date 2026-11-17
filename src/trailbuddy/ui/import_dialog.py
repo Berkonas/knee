@@ -81,10 +81,19 @@ class ImportDialog(QDialog):
         self.progress.setVisible(True)
         self.worker = Worker(lambda progress, cancelled: importer.organise(self._folder, self.n_part.value(),
                                                                            progress, cancelled))
-        self.worker.progress.connect(lambda f, m: (self.progress.setValue(int(100 * f)), self.msg.setText(m)))
+        self.worker.progress.connect(self._on_progress)   # bound methods: queued to the UI thread
         self.worker.finished.connect(self._show)
-        self.worker.failed.connect(lambda m: (error_box(self, "Import failed", m), self.btn_scan.setEnabled(True)))
+        self.worker.failed.connect(self._on_failed)
         self.thread = start_worker(self, self.worker)
+
+    def _on_progress(self, f: float, m: str):
+        self.progress.setValue(int(100 * f))
+        self.msg.setText(m)
+
+    def _on_failed(self, m: str):
+        error_box(self, "Import failed", m)
+        self.btn_scan.setEnabled(True)
+        self.progress.setVisible(False)
 
     def _show(self, plan):
         self.plan = plan
