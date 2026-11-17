@@ -22,7 +22,7 @@ from .pole import PoleTrack
 from .video import probe
 
 PIPELINE_VERSION = 3  # 3: tracked crops + RTMPose-x default
-POLE_VERSION = 5   # bump when the pole detector changes: poles are recomputed, cached poses are reused
+POLE_VERSION = 7   # bump when the pole detector changes: poles are recomputed, cached poses are reused
 
 
 def _key(video: str, settings: dict) -> dict:

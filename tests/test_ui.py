@@ -180,3 +180,30 @@ def test_study_page_validation(win, tmp_path, no_dialogs):
     pr.trials.append(Trial("P01", "C0", 1))
     pp.remove_participant()
     assert len(pr.participants) == 1 and no_dialogs
+
+
+def test_biomechanics_page_modes_fbd_and_recalculate(win, study, qtbot, no_dialogs):
+    win.state.set_project(study)
+    ws, bp = win.pages["workspace"], win.pages["biomech"]
+    ws.browser.select_trial("P01_C1_T01")
+    ws.form.load_mode.setCurrentIndex(ws.form.load_mode.findData("video"))
+    ws.run()
+    qtbot.waitUntil(lambda: ws.inspector.btn_run.isEnabled(), timeout=60000)
+    assert bp.trial.id == "P01_C1_T01" and bp.res is not None
+    assert bp.warn.isVisibleTo(bp) and "Mode A" in bp.warn.text()
+    assert bp.res.metric("knee_ext_moment_peak").kind == "unavailable"
+    # switch to an assumption-based scenario: recalculation reuses tracking and shows loads + free-body diagram
+    bp.mode.setCurrentIndex(bp.mode.findData("scenario"))
+    bp.pole_pct.setValue(15)
+    bp.recalculate()
+    qtbot.waitUntil(lambda: bp.btn_apply.isEnabled(), timeout=60000)
+    assert bp.res.metric("knee_ext_moment_peak").kind == "scenario", no_dialogs
+    assert bp.res.metric("shoulder_moment_peak").value is not None
+    assert study.trial("P01_C1_T01").settings["load_mode"] == "scenario"
+    fr = bp.fbd.frame
+    assert "cop" in fr and "grf_f" in fr and np.isfinite(fr["knee"]).all()
+    bp.fbd.grab()  # paints without error
+    sig = []
+    bp.seekRequested.connect(sig.append)
+    bp.btn_video.click()
+    assert sig and win.stack.currentIndex() == 1

@@ -213,6 +213,8 @@ def analyse(pose: PoseSeries, body_mass: float | None, height_m: float | None, s
         del fa_ang
         ts[f"pole_{pside}_tip_source"] = tr.source
         tip_lab = kmod.to_lab(tr.tip, pose.height, kin.direction, scale)
+        if scale:
+            ts[f"pole_{pside}_tip_x_m"], ts[f"pole_{pside}_tip_y_m"] = tip_lab[:, 0], tip_lab[:, 1]
         hand_lab = dyn.grip_point(kin, pside)
         d, assumed = dyn.pole_direction(hand_lab, tip_lab, n)
         if assumed:
@@ -307,6 +309,7 @@ def analyse(pose: PoseSeries, body_mass: float | None, height_m: float | None, s
     # ---- lower-limb kinetics ----------------------------------------------------------------
     kinetics_kind = None
     m_knee = None
+    fbd = None
     measured_grf = "vertical" in fdat and s.load_mode == "measured"
     if kin_block is not None:
         notes.append(f"Joint loads not calculated: {kin_block}")
@@ -331,6 +334,7 @@ def analyse(pose: PoseSeries, body_mass: float | None, height_m: float | None, s
             notes.append("COP not measured/located: assumed on the foot (cop_fraction).")
         leg = dyn.inverse_dynamics_leg(kin, side, body_mass, np.stack([fh, fv], axis=1), cop)
         m_knee = leg.knee_extensor
+        fbd = {"cop": cop, "grf": np.stack([fh, fv], axis=1)}
         ts[f"{side}_ankle_plantarflexor_moment_nm"] = leg.ankle_plantarflexor
         ts[f"{side}_hip_extensor_moment_nm"] = leg.hip_extensor
         ts["grf_vertical_n"] = fv
@@ -343,6 +347,8 @@ def analyse(pose: PoseSeries, body_mass: float | None, height_m: float | None, s
         cop = dyn.cop_on_foot(kin, side, s.cop_fraction)
         com = dyn.whole_body_com(kin) if s.grf_direction == "com" else None
         m_knee = dyn.quasi_static_knee(kin, side, f_foot, cop, com)
+        fbd = {"cop": cop, "grf": dyn.grf_toward_com(f_foot, cop, com) if com is not None
+               else np.stack([np.zeros(n), f_foot], axis=1), "com": com}
         m_knee = np.where(stance, m_knee, np.nan)
         ts[f"{side}_foot_force_scenario_n"] = f_foot
         kinetics_kind = "scenario"
@@ -362,6 +368,13 @@ def analyse(pose: PoseSeries, body_mass: float | None, height_m: float | None, s
             reason_override = "Too many stance frames with missing landmarks."
     if m_knee is not None:
         ts[f"{side}_knee_extensor_moment_nm"] = m_knee
+        # free-body-diagram inputs (lab frame, m and N): where and how the foot force acts
+        if fbd is not None:
+            cop_, grf_ = fbd["cop"], np.where(stance[:, None], fbd["grf"], np.nan)
+            ts[f"{side}_cop_x_m"], ts[f"{side}_cop_y_m"] = cop_[:, 0], cop_[:, 1]
+            ts[f"{side}_grf_x_n"], ts[f"{side}_grf_y_n"] = grf_[:, 0], grf_[:, 1]
+            if fbd.get("com") is not None:
+                ts["com_x_m"], ts["com_y_m"] = fbd["com"][:, 0], fbd["com"][:, 1]
         mk_pos = np.where(stance, np.nan_to_num(m_knee), 0.0)
         q_nom = dyn.quadriceps_force(mk_pos, s.moment_arm_m)
         q_lo = dyn.quadriceps_force(mk_pos, s.moment_arm_range_m[1])  # longer arm -> lower force
@@ -456,6 +469,14 @@ def analyse(pose: PoseSeries, body_mass: float | None, height_m: float | None, s
                         if v.size:
                             rng[key].append(float(v.max()))
             loaded = f > 0
+            grip = dyn.grip_point(kin, pside)
+            ts[f"pole_{pside}_force_x_n"] = np.where(loaded, f_hand[:, 0], np.nan)
+            ts[f"pole_{pside}_force_y_n"] = np.where(loaded, f_hand[:, 1], np.nan)
+            ts[f"{pside}_grip_x_m"], ts[f"{pside}_grip_y_m"] = grip[:, 0], grip[:, 1]
+            for nm in ("shoulder", "elbow", "wrist"):
+                xy_ = kin.get(pside, nm)
+                ts.setdefault(f"{pside}_{nm}_x_m", xy_[:, 0])
+                ts.setdefault(f"{pside}_{nm}_y_m", xy_[:, 1])
             ts[f"{pside}_elbow_moment_nm"] = np.where(loaded, am.elbow, np.nan)
             ts[f"{pside}_shoulder_moment_nm"] = np.where(loaded, am.shoulder, np.nan)
             for arr, out_list in ((am.elbow, el_pk), (am.shoulder, sh_pk)):

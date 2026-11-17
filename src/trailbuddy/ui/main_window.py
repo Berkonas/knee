@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QApplication, QLabel, QMainWindow, QMessageBox, QS
 from .. import APP_NAME, __version__
 from ..core.paths import assets_dir
 from .components import Segmented
+from .biomech_page import BiomechanicsPage
 from .methods_page import MethodsPage
 from .project_page import ProjectPage
 from .results_page import ResultsPage
@@ -16,7 +17,8 @@ from .state import AppState
 from .theme import apply_theme
 from .workspace import WorkspacePage
 
-MODES = [("Analyse", "workspace"), ("Study", "project"), ("Compare", "results"), ("Methods", "methods")]
+MODES = [("Study", "project"), ("Analyse", "workspace"), ("Biomechanics", "biomech"), ("Compare", "results"),
+         ("Methods", "methods")]
 
 
 class MainWindow(QMainWindow):
@@ -31,9 +33,11 @@ class MainWindow(QMainWindow):
         self.resize(1480, 920)
         self.setMinimumSize(QSize(1080, 680))
         self.pages = {"workspace": WorkspacePage(self.state), "project": ProjectPage(self.state),
-                      "results": ResultsPage(self.state), "methods": MethodsPage(self.state)}
+                      "results": ResultsPage(self.state), "methods": MethodsPage(self.state),
+                      "biomech": BiomechanicsPage(self.state)}
         self.stack = QStackedWidget()
         for _, key in MODES:
+            self.pages[key].setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)  # paint the theme background
             self.stack.addWidget(self.pages[key])
         self.setCentralWidget(self.stack)
         tb = QToolBar("Main")
@@ -61,6 +65,7 @@ class MainWindow(QMainWindow):
         self.state.projectChanged.connect(self._project_changed)
         self.state.openTrial.connect(self._open_trial)
         self.pages["workspace"].browser.importRequested.connect(self.import_recordings)
+        self.pages["biomech"].seekRequested.connect(self._seek_video)
         self._reduce_motion = self.reduce_motion()
         self._menus()
         self.statusBar().showMessage("Ready. Open or create a study, then import recordings.")
@@ -169,7 +174,7 @@ class MainWindow(QMainWindow):
         if self.state.project is None:
             QMessageBox.information(self, "Create a study first",
                                     "Create a study (File > New study) to hold the imported trials and results.")
-            self.mode.set_index(1)
+            self.mode.set_index(self._page_index("project"))
             return
         ImportDialog(self, self.state).exec()
 
@@ -185,8 +190,15 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"Opened {p.name}: {len(p.trials)} trials, "
                                          f"{sum(t.status == 'analysed' for t in p.trials)} analysed", 8000)
 
+    def _page_index(self, key: str) -> int:
+        return [k for _, k in MODES].index(key)
+
+    def _seek_video(self, t: float):
+        self.mode.set_index(self._page_index("workspace"))
+        self.pages["workspace"].video.seek(t, force=True)
+
     def _open_trial(self, tid: str, page: str):
-        self.mode.set_index(0)
+        self.mode.set_index(self._page_index("workspace"))
         self.pages["workspace"].browser.select_trial(tid)
         self.pages["workspace"].open_trial(tid)
 
@@ -194,3 +206,4 @@ class MainWindow(QMainWindow):
         last = self.state.settings.value("last_project")
         if last and (Path(last) / "project.json").exists():
             self.pages["project"].load_path(last)
+            self.mode.set_index(self._page_index("workspace"))

@@ -280,6 +280,7 @@ def run_pair(project, trial, settings: AnalysisSettings, proc: dict | None = Non
                                     "videos": [asdict(v) for v in trial.videos], "sync": trial.sync,
                                     "interval": [t0, t1], "processing": proc})
     trial.interval = [t0, t1]
+    trial.settings.update({k: v for k, v in asdict(settings).items() if k != "scale_m_per_px" or v})
     trial.status = "analysed"
     project.save()
     if progress:

@@ -75,7 +75,9 @@ def test_pole_detection_on_rendered_frame():
     got_tip, ang, length, conf, method = r
     assert method == "colour"
     assert ang == pytest.approx(8, abs=2)
-    assert np.linalg.norm(got_tip - tip) < 15
+    # the reported tip includes the dark ferrule below the coloured shaft (fixed fraction, calibrated on real labels)
+    expected = wrist + (tip - wrist) * (1 + pole_auto.FERRULE_FRACTION)
+    assert np.linalg.norm(got_tip - expected) < 15
     assert conf > 0.5
     # no shaft -> nothing invented
     img2 = np.full((1080, 1920, 3), 235, np.uint8)

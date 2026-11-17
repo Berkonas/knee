@@ -123,9 +123,16 @@ def detect_in_frame(frame: np.ndarray, wrist: np.ndarray, body_h: float, exclude
         if method == "edges":
             conf *= 0.6
         tip = wrist + u * tip_r
-        tip = _extend_through_ferrule(frame, tip, u, body_h)
+        if FERRULE_FRACTION is None:
+            tip = _extend_through_ferrule(frame, tip, u, body_h)
+        else:  # geometric prior: the dark tip section adds a fixed fraction of the coloured hand-to-shaft-end length
+            tip = wrist + u * tip_r * (1 + FERRULE_FRACTION)
         best = (tip, ang, float(np.linalg.norm(tip - wrist)), conf, method)
     return best
+
+
+FERRULE_SIDE_PX = 7
+FERRULE_FRACTION: float | None = 0.071  # dark tip section / coloured hand-to-shaft-end length: median of 12 hand-labelled tips (IQR 0.066-0.076)
 
 
 def _extend_through_ferrule(frame: np.ndarray, tip: np.ndarray, u: np.ndarray, body_h: float) -> np.ndarray:
@@ -134,6 +141,7 @@ def _extend_through_ferrule(frame: np.ndarray, tip: np.ndarray, u: np.ndarray, b
     tip sat ~28 px above hand-labelled tips)."""
     h, w = frame.shape[:2]
     max_steps = int(0.09 * body_h)
+    nrm = np.array([-u[1], u[0]])
     last = tip.copy()
     misses = 0
     for k in range(1, max_steps + 1):
@@ -143,6 +151,16 @@ def _extend_through_ferrule(frame: np.ndarray, tip: np.ndarray, u: np.ndarray, b
             break
         patch = frame[max(0, y - 1):y + 2, max(0, x - 1):x + 2]
         v = patch.max(axis=2).min()          # darkest pixel of the 3x3 neighbourhood (HSV value = max BGR)
+        # the ferrule is a thin dark line: if the pixels either side of it are dark too, we have run into a dark
+        # surface (the black steel stairs, shadow) and must stop (validation: front-view tips overshot ~28 px)
+        side_dark = 0
+        for sgn in (-1, 1):
+            r = q + sgn * nrm * FERRULE_SIDE_PX
+            xs, ys = int(round(r[0])), int(round(r[1]))
+            if 0 <= xs < w and 0 <= ys < h and frame[ys, xs].max() < 90:
+                side_dark += 1
+        if side_dark == 2:
+            break
         if v < 90:
             last = q
             misses = 0

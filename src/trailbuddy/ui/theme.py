@@ -74,6 +74,7 @@ QLabel#pageHint, QLabel#muted {{ color: {t['muted']}; }}
 QLabel#sectionTitle, QLabel#groupTitle {{ font-size: 13px; font-weight: 600; padding-top: 6px; }}
 QLabel#cardTitle {{ font-size: 13px; font-weight: 600; }}
 QLabel#warn {{ color: {t['warn']}; }}
+QLabel#warnBanner {{ background: #F7E9D2; color: #6B4105; border-radius: 8px; padding: 8px 12px; }}
 QLabel#error {{ color: {t['error']}; }}
 QLabel#value {{ font-size: 15px; font-weight: 600; }}
 QLabel#bigValue {{ font-size: 22px; font-weight: 600; }}

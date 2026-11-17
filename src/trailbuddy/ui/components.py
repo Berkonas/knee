@@ -143,6 +143,10 @@ class Segmented(QWidget):
             b.setCheckable(True)
             b.setObjectName("segment")
             b.setCursor(Qt.CursorShape.PointingHandCursor)
+            f = b.font()
+            f.setBold(True)  # the checked segment is bold: reserve its width so the label never clips
+            from PySide6.QtGui import QFontMetrics
+            b.setMinimumWidth(QFontMetrics(f).horizontalAdvance(lab) + 30)
             self.group.addButton(b, i)
             lay.addWidget(b)
             self.buttons.append(b)

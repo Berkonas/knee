@@ -354,6 +354,7 @@ class WorkspacePage(QWidget):
         self.browser.duplicateTrial.connect(self.duplicate_trial)
         self.browser.clearCache.connect(self.clear_cache)
         self.browser.restoreRequested.connect(self.restore_trials)
+        self.state.resultsChanged.connect(self._results_changed)
         for wdg in (ins.t_cond,):
             wdg.currentIndexChanged.connect(self._trial_meta_changed)
         ins.t_num.valueChanged.connect(self._trial_meta_changed)
@@ -395,6 +396,7 @@ class WorkspacePage(QWidget):
         self._loading = True
         t = self.project.trial(tid)
         self.trial = t
+        self.state.trialSelected.emit(tid)
         p = self.project.participant(t.participant_id)
         c = self.project.condition(t.condition_code)
         side, front = video_by_role(t, "side"), video_by_role(t, "front")
@@ -781,6 +783,21 @@ class WorkspacePage(QWidget):
             self.state.save()
             self.state.trialsChanged.emit()
             self.state.status.emit("Body metrics saved. Re-analyse to use them.")
+
+    def _results_changed(self):
+        """Another page (Biomechanics) re-ran this trial: show its new settings and results."""
+        if self.trial is None or self.project is None or self.trial not in self.project.trials:
+            return
+        folder = self.project.root / "trials" / self.trial.id
+        if (folder / "analysis.json").exists() and not self._loading:
+            try:
+                self.res = load_result(folder)
+            except Exception:
+                return
+            self._loading = True
+            self.form.load_from(self.trial)
+            self._loading = False
+            self._show_result()
 
     # ---- trial management -------------------------------------------------------------------
     def edit_trial_details(self, tid: str):

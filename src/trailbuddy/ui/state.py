@@ -12,12 +12,12 @@ def app_settings() -> QSettings:
     return QSettings("TrailBuddy", os.environ.get("TRAILBUDDY_SETTINGS_APP", "Analyzer"))
 
 
-
 class AppState(QObject):
     projectChanged = Signal()
     trialsChanged = Signal()
     resultsChanged = Signal()
     openTrial = Signal(str, str)  # trial id, page ('single' | 'two')
+    trialSelected = Signal(str)   # emitted when Analyse shows a trial (other pages follow it)
     status = Signal(str)
 
     def __init__(self):
