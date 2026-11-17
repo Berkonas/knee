@@ -107,7 +107,8 @@ def analyse(pose: PoseSeries, body_mass: float, height_m: float, settings: Analy
     if not stance.any():
         notes.append(f"No stance phase detected for the {side} foot; kinetics need foot contacts.")
 
-    ts = {"time_s": t}
+    stride = int(pose.meta.get("stride", 1) or 1)
+    ts = {"time_s": t, "frame_index": np.round(t * pose.fps * stride).astype(int)}  # source-video frame number
     for k, v in kin.angles.items():
         ts[f"{k}_deg"] = v
     ts[f"{side}_stance"] = stance.astype(int)
@@ -452,8 +453,8 @@ def save_result(res: TrialResult, out_dir: str | Path, meta: dict | None = None)
         "sensitivity": out / "sensitivity.csv",
         "info": out / "analysis.json",
     }
-    res.timeseries.to_csv(files["timeseries"], index=False, float_format="%.6g")
-    res.summary_table().to_csv(files["summary"], index=False, float_format="%.6g")
+    res.timeseries.to_csv(files["timeseries"], index=False, float_format="%.9g")
+    res.summary_table().to_csv(files["summary"], index=False, float_format="%.9g")
     res.events.to_csv(files["events"], index=False, float_format="%.6g")
     res.sensitivity.to_csv(files["sensitivity"], index=False, float_format="%.6g")
     files["info"].write_text(json.dumps({"meta": meta or {}, "side": res.side, "quality": res.quality,

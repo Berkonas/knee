@@ -169,3 +169,24 @@ def test_reference_classification():
     for k in reference.RANGES:
         from trailbuddy.core.metrics import INFO
         assert k in INFO
+
+
+def test_exported_trial_csv_matches_result_and_timestamps(tmp_path, monkeypatch):
+    """Exported time series/summary equal the in-memory result; time_s maps exactly to frame indices."""
+    from trailbuddy.core import export
+    from trailbuddy.core.project import CameraVideo
+    res, truth = run(uses_poles=True, mode="scenario")
+    pr = Project.new(tmp_path / "s", "x")
+    pr.add_participant(Participant("P01", 70, 1.75))
+    tr = pr.add_trial(Trial("P01", "C1", 1, [CameraVideo(str(tmp_path / "none.mp4"), "side")]))
+    files = export.export_trial(pr, tr, res, tmp_path / "out", annotated_video=False)
+    ts = pd.read_csv([f for f in files if f.name == "timeseries.csv"][0])
+    assert list(ts.columns) == list(res.timeseries.columns)
+    np.testing.assert_allclose(ts.to_numpy(float), res.timeseries.to_numpy(float), rtol=1e-5, atol=1e-6,
+                               equal_nan=True)
+    sm = pd.read_csv([f for f in files if f.name == "summary.csv"][0])
+    mem = res.summary_table()
+    assert list(sm.key) == list(mem.key)
+    np.testing.assert_allclose(sm.value.to_numpy(float), mem.value.to_numpy(float), rtol=1e-5, equal_nan=True)
+    frames = ts.time_s.to_numpy() * 60.0
+    np.testing.assert_allclose(frames, np.round(frames), atol=1e-6)   # every sample is an exact video frame

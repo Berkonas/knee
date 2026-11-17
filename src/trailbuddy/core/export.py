@@ -178,8 +178,8 @@ def export_trial(project, trial, res, out_dir, processing: dict | None = None, a
     out = Path(out_dir) / trial.participant_id / trial.id
     out.mkdir(parents=True, exist_ok=True)
     files = []
-    res.timeseries.to_csv(out / "timeseries.csv", index=False, float_format="%.6g")
-    res.summary_table().to_csv(out / "summary.csv", index=False, float_format="%.6g")
+    res.timeseries.to_csv(out / "timeseries.csv", index=False, float_format="%.9g")
+    res.summary_table().to_csv(out / "summary.csv", index=False, float_format="%.9g")
     res.events.to_csv(out / "events.csv", index=False, float_format="%.6g")
     files += [out / "timeseries.csv", out / "summary.csv", out / "events.csv"]
     meta = {"trial": trial.id, "participant": trial.participant_id, "condition": trial.condition_code,

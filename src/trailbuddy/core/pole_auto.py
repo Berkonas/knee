@@ -122,12 +122,39 @@ def detect_in_frame(frame: np.ndarray, wrist: np.ndarray, body_h: float, exclude
         conf = float(np.clip(support / tip_r, 0, 1) * np.clip(1 - perp / (0.07 * body_h), 0.2, 1))
         if method == "edges":
             conf *= 0.6
-        best = (wrist + u * tip_r, ang, tip_r, conf, method)
+        tip = wrist + u * tip_r
+        tip = _extend_through_ferrule(frame, tip, u, body_h)
+        best = (tip, ang, float(np.linalg.norm(tip - wrist)), conf, method)
     return best
 
 
+def _extend_through_ferrule(frame: np.ndarray, tip: np.ndarray, u: np.ndarray, body_h: float) -> np.ndarray:
+    """The coloured shaft ends above a short dark ferrule/rubber tip. Continue along the axis while the pixels
+    stay dark (V < 90), up to 0.09 H, so the reported tip is the ground-contact end (validated: without this the
+    tip sat ~28 px above hand-labelled tips)."""
+    h, w = frame.shape[:2]
+    max_steps = int(0.09 * body_h)
+    last = tip.copy()
+    misses = 0
+    for k in range(1, max_steps + 1):
+        q = tip + u * k
+        x, y = int(round(q[0])), int(round(q[1]))
+        if not (0 <= x < w and 0 <= y < h):
+            break
+        patch = frame[max(0, y - 1):y + 2, max(0, x - 1):x + 2]
+        v = patch.max(axis=2).min()          # darkest pixel of the 3x3 neighbourhood (HSV value = max BGR)
+        if v < 90:
+            last = q
+            misses = 0
+        else:
+            misses += 1
+            if misses > 3:
+                break
+    return last
+
+
 def track_poles(video: str, pose: PoseSeries, frame0: int = 0, colour: PoleColour | None = None,
-                min_conf: float = 0.25, progress: Callable[[float], None] | None = None,
+                min_conf: float = 0.15, progress: Callable[[float], None] | None = None,
                 cancelled: Callable[[], bool] | None = None) -> dict[str, PoleTrack]:
     """Track both poles through the frames covered by ``pose`` (same frame indices/time base)."""
     from .pose import Cancelled
@@ -157,9 +184,21 @@ def track_poles(video: str, pose: PoseSeries, frame0: int = 0, colour: PoleColou
             torso = xy[[11, 12, 24, 23]]
             excl = torso if np.isfinite(torso).all() else None
             mask = evidence_mask(frame, colour)
+            found = {}
             for side in ("left", "right"):
-                wr = xy[idx(side, "wrist")]
-                res = detect_in_frame(frame, wr, body_h, excl, colour, prev_ang[side], mask)
+                found[side] = detect_in_frame(frame, xy[idx(side, "wrist")], body_h, excl, colour, prev_ang[side], mask)
+            # one shaft cannot belong to both hands: if both hands picked the same line, keep it for the hand
+            # with the higher confidence and search again for the other hand with that shaft masked out
+            a, b = found["left"], found["right"]
+            if a is not None and b is not None and np.linalg.norm(a[0] - b[0]) < 0.05 * body_h \
+                    and abs(a[1] - b[1]) < 5:
+                keep, redo = ("left", "right") if a[3] >= b[3] else ("right", "left")
+                m2 = mask.copy()
+                cv2.line(m2, tuple(xy[idx(keep, "wrist")].astype(int)), tuple(found[keep][0].astype(int)), 0,
+                         max(8, int(0.03 * body_h)))
+                found[redo] = detect_in_frame(frame, xy[idx(redo, "wrist")], body_h, excl, colour, prev_ang[redo], m2)
+            for side in ("left", "right"):
+                res = found[side]
                 if res is not None and res[3] >= min_conf:
                     tip, ang, _, conf, method = res
                     out[side]["tip"][k] = tip
