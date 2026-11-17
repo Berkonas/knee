@@ -40,6 +40,7 @@ class AnalysisSettings:
     contact_min_duration_s: float = 0.12
     support_model: str = "static"         # 'static' (m*g) | 'dynamic' (m*(g+a_COM))
     cop_fraction: float = 0.5             # assumed COP position heel(0) -> toe(1)
+    grf_direction: str = "com"            # 'com' (COP -> whole-body COM) | 'vertical' (upper bound)
     moment_arm_m: float = MOMENT_ARM_NOMINAL_M
     moment_arm_range_m: tuple[float, float] = MOMENT_ARM_RANGE_M
     pole_force_mode: str = "none"         # 'none' | 'scenario' | 'measured'
@@ -308,13 +309,16 @@ def analyse(pose: PoseSeries, body_mass: float, height_m: float, settings: Analy
         support = dyn.total_support_force(kin, body_mass, s.support_model == "dynamic")
         f_foot = np.nan_to_num(share) * np.maximum(support - pole_vert, 0.0)
         cop = dyn.cop_on_foot(kin, side, s.cop_fraction)
-        m_knee = dyn.quasi_static_knee(kin, side, f_foot, cop)
+        com = dyn.whole_body_com(kin) if s.grf_direction == "com" else None
+        m_knee = dyn.quasi_static_knee(kin, side, f_foot, cop, com)
         m_knee = np.where(stance, m_knee, np.nan)
         ts[f"{side}_foot_force_scenario_n"] = f_foot
         kinetics_kind = "scenario"
         notes.append("No measured ground reaction force: knee moment from the quasi-static scenario "
                      f"model (support = {'m(g+a_COM)' if s.support_model == 'dynamic' else 'body weight'}, "
-                     f"COP at {s.cop_fraction:.2f} of heel-to-toe, inertia neglected).")
+                     f"COP at {s.cop_fraction:.2f} of heel-to-toe, force directed "
+                     f"{'from the COP toward the whole-body COM' if s.grf_direction == 'com' else 'vertically (upper bound)'}, "
+                     "segment inertia neglected).")
 
     sens_rows = []
     if m_knee is not None and stance.any():
@@ -369,14 +373,16 @@ def analyse(pose: PoseSeries, body_mass: float, height_m: float, settings: Analy
                 if np.isfinite(support[stance]).mean() < 0.8:
                     notes.append(f"Sensitivity rows for the {supp} support model skipped (COM not computable).")
                     continue
-                for copf in sorted({0.25, 0.5, 0.75, round(s.cop_fraction, 3)}):
+                com_all = dyn.whole_body_com(kin)
+                for gdir, copf in [(g, c) for g in ("com", "vertical") for c in sorted({0.25, 0.5, 0.75, round(s.cop_fraction, 3)})]:
                     f_foot = np.nan_to_num(share) * np.maximum(support - pole_vert, 0.0)
-                    mk = np.where(stance, dyn.quasi_static_knee(kin, side, f_foot, dyn.cop_on_foot(kin, side, copf)), np.nan)
+                    mk = np.where(stance, dyn.quasi_static_knee(kin, side, f_foot, dyn.cop_on_foot(kin, side, copf),
+                                                                com_all if gdir == "com" else None), np.nan)
                     if np.isfinite(mk[stance]).mean() < 0.8:
                         continue
                     mk = np.nan_to_num(mk)
                     for r in (s.moment_arm_range_m[0], s.moment_arm_m, s.moment_arm_range_m[1]):
-                        sens_rows.append({"support_model": supp, "cop_fraction": copf, "moment_arm_m": r,
+                        sens_rows.append({"support_model": supp, "grf_direction": gdir, "cop_fraction": copf, "moment_arm_m": r,
                                           "peak_knee_moment_nm_per_kg": float(np.nanmax(mk)) / body_mass,
                                           "peak_quad_force_n": float(dyn.quadriceps_force(mk, r).max()),
                                           "knee_impulse_nms_per_kg": dyn.integrate(np.maximum(mk, 0), t) / body_mass})
@@ -384,7 +390,7 @@ def analyse(pose: PoseSeries, body_mass: float, height_m: float, settings: Analy
                 sdf = pd.DataFrame(sens_rows)
                 mv = next(m for m in M if m.key == "knee_ext_moment_peak")
                 mv.low, mv.high = float(sdf.peak_knee_moment_nm_per_kg.min()), float(sdf.peak_knee_moment_nm_per_kg.max())
-                mv.note = "range = sensitivity to support model and COP"
+                mv.note = "range = sensitivity to support model, force direction and COP"
     else:
         reason = ("Needs a metric scale." if scale is None else "Needs detected foot contacts.")
         if "reason_override" in locals():

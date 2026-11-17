@@ -205,11 +205,33 @@ def cop_on_foot(kin, side: str, frac_heel_to_toe: float) -> np.ndarray:
     return heel + frac_heel_to_toe * (toe - heel)
 
 
-def quasi_static_knee(kin, side: str, f_vertical: np.ndarray, cop: np.ndarray) -> np.ndarray:
-    """Internal knee extensor moment (N*m), + = extensor, from a vertical foot force at COP."""
+def grf_toward_com(f_vertical: np.ndarray, cop: np.ndarray, com: np.ndarray) -> np.ndarray:
+    """Foot force vector (n,2) whose vertical part is f_vertical and whose line of action runs from the
+    COP through the whole-body COM. This is the usual quasi-static assumption: with little angular
+    momentum about the COM the ground reaction force points close to the COM (Herr & Popovic 2008).
+    Frames where the COM is not above the COP fall back to a vertical force."""
+    d = com - cop
+    ok = np.isfinite(d).all(axis=1) & (d[:, 1] > 0.05)
+    fx = np.where(ok, f_vertical * d[:, 0] / np.where(ok, d[:, 1], 1.0), 0.0)
+    return np.stack([fx, f_vertical], axis=1)
+
+
+def quasi_static_knee(kin, side: str, f_vertical: np.ndarray, cop: np.ndarray,
+                      com: np.ndarray | None = None) -> np.ndarray:
+    """Internal knee extensor moment (N*m), + = extensor, from a quasi-static foot force at the COP.
+
+    M_ext = (x_knee - x_COP) * F_y + (y_COP - y_knee) * F_x   (minus the external moment of F about the knee)
+
+    com=None: the force is vertical (F_x = 0), so M_ext = F_v * (x_knee - x_COP), an upper bound when the
+    true force tilts toward the body. com given: the force is directed from the COP toward the COM.
+    """
     if kin.units != "m":
         raise ValueError("Knee moment requires a metric scale (calibrate distance or enter height).")
-    return f_vertical * (kin.get(side, "knee")[:, 0] - cop[:, 0])
+    knee = kin.get(side, "knee")
+    if com is None:
+        return f_vertical * (knee[:, 0] - cop[:, 0])
+    F = grf_toward_com(f_vertical, cop, com)
+    return (knee[:, 0] - cop[:, 0]) * F[:, 1] + (cop[:, 1] - knee[:, 1]) * F[:, 0]
 
 
 @dataclass

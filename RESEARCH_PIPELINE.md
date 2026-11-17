@@ -103,9 +103,78 @@ knees on loose, light-coloured trousers, while RTMPose found the knees, heels an
 | Knee frontal-plane projection angle | 180° − ∠(hip, knee, ankle) | deg | front |
 | Trunk sway, pelvic tilt range | mid-hip→mid-shoulder from vertical; hip line from horizontal | deg | front |
 | Step width, pole tip spread | ankle separation / hip width; tip separation / shoulder width | ratio | front |
-| Knee extensor moment (scenario) | F·(x_knee − x_COP), with F = body weight minus assumed pole support, quasi-static | N·m/kg | side + model |
+| Knee extensor moment (scenario) | quasi-static foot force at an assumed COP, directed toward the body COM (equations below) | N·m/kg | side + model |
 | Quadriceps force (scenario) | knee moment / patellar-tendon moment arm (5 cm, sensitivity range 4–6 cm) [6] | N, ×BW | side + model |
 | Mechanical demand | cumulative knee extensor angular impulse; negative knee work; peak power absorption | N·m·s/kg, J/kg, W/kg | side + model |
+
+## Estimated loading: exact equations
+
+Estimated loads are calculated only after a participant's **measured** body mass *m* (kg) and height *h* (m) are
+entered in *Body metrics…*. Until then every force, moment, power, impulse and work value is shown as
+*unavailable*, and the matching columns are left out of the time series and exports. No default mass or height is
+ever used. All quantities are SI: N, N·m, W, J and s; normalised values are per kg of body mass.
+
+**Scale.** Pixel coordinates are converted to metres with *s* = (participant's leg length from *h* and
+Winter's segment proportions [4], or the entered thigh and shank lengths) / (median leg length in pixels). A
+calibrated scene distance can be used instead. Without a scale, all kinetics are unavailable.
+
+**Support force (video-only trials).** Total vertical support F_s = m·g (quasi-static, default) or
+m·(g + a_COM,y), with a_COM from the filtered whole-body COM (Winter segment parameters [4]; foot COM
+from de Leva [8]). The stance leg carries
+
+  F_foot = share · max(F_s − F_pole,y, 0)
+
+where share = 1 in single support and ramps linearly from the trailing to the leading leg in double support, and
+F_pole,y = Σ (axial pole force · vertical component of the tip→hand direction). Pole force is 0 unless a measured
+pole force is loaded or the *scenario* option is chosen (default 10 % of body weight per planted pole).
+
+**Foot force direction.** The force acts at an assumed centre of pressure COP = heel + c·(toe − heel), with
+c = 0.5 by default. By default its line of action runs from the COP toward the whole-body COM, because with small
+angular momentum about the COM the ground reaction force points close to the COM [9]:
+
+  F = (F_x, F_y) = F_foot · ((x_COM − x_COP)/(y_COM − y_COP), 1)
+
+A purely vertical force (F_x = 0) can be selected instead; it gives an upper bound.
+
+**Knee extensor moment** (internal, + = extensor; minus the external moment of F about the knee, with segment
+weight and inertia below the knee neglected):
+
+  M_knee = (x_knee − x_COP)·F_y + (y_COP − y_knee)·F_x
+
+With a measured ground reaction force, the app instead uses full 2D Newton–Euler inverse dynamics through the
+foot, shank and thigh [4]. Each segment satisfies F_p = m_s·a − m_s·g − F_d and
+M_p = I·α − M_d − r_p × F_p − r_d × F_d.
+
+**Derived quantities.**
+* Peak knee moment: max over stance of M_knee / m (N·m/kg).
+* Quadriceps (patellar tendon) force: F_quad = max(M_knee, 0) / r, with r = 5 cm and a sensitivity range of
+  4–6 cm [6]. This is a net-moment-equivalent force. It ignores co-contraction, so it is not a measured muscle
+  force, and it is **not** knee joint contact force, which is not estimated.
+* Knee power: P = M_knee · ω_ext, with ω_ext = −d(knee flexion)/dt in rad/s. Negative power is eccentric energy
+  absorption.
+* Negative work: ∫ min(P, 0) dt over stance, divided by m (J/kg). Peak power absorption: −min(P) / m (W/kg).
+* Extensor angular impulse: ∫ max(M_knee, 0) dt over stance, divided by m (N·m·s/kg). It is reported per step,
+  in total and per metre descended. It measures mechanical demand, not fatigue.
+* Arm moments (when a pole force exists): quasi-static elbow and shoulder moments from the pole force at the grip
+  (midway between wrist and index knuckle) plus forearm and upper-arm weight.
+
+**Sensitivity.** For every scenario trial the app recomputes the peak moment, quadriceps force and impulse over a
+grid: support model (static, dynamic) × force direction (toward COM, vertical) × c ∈ {0.25, 0.5, 0.75} ×
+r ∈ {4, 5, 6} cm. The reported range is the grid's minimum to maximum.
+
+**Physical consistency checks (automated tests).**
+* Moments scale linearly with body mass, and scale-free angles are unchanged.
+* A force line through the knee gives zero moment.
+* With the COM directly above the COP, the COM model equals the vertical model.
+* Hand-calculated examples match to 10⁻⁶ N·m: 700 N at 5 cm gives 35 N·m; a force tilted toward the COM gives −28 N·m.
+* Static inverse dynamics matches a hand calculation, and a swinging pendulum matches I·α plus the gravity term.
+* Without measured body metrics, every kinetic output is blocked.
+
+**Check on real data.** On P01 trial 1 with test values of 75 kg and 1.75 m, the peak knee extensor moment was
+2.87 N·m/kg with a vertical force and 1.82 N·m/kg with the force toward the COM (1.50 at c = 0.75). Published
+stair-descent values are 1.0–1.6 N·m/kg [10]. The vertical model overestimates, which is why the COM direction is
+the default. Remaining reasons for a higher estimate: the quasi-static support ignores segment inertia, and the 2D
+projection misplaces the COP.
 
 ## Validation and limitations
 
@@ -149,3 +218,6 @@ pairing score and the software version. Dependencies are pinned in `uv.lock`.
 [5] Zeni J.A. et al. (2008) *Gait Posture* 27:710–714.
 [6] Tsaopoulos D.E. et al. (2009) *Eur J Appl Physiol* 105:809–814; Krevolin J.L. et al. (2004) *J Biomech* 37:785–788.
 [7] Hopkins W.G. (2000) *Sports Med* 30:1–15.
+[8] de Leva P. (1996) *J Biomech* 29:1223–1230.
+[9] Herr H., Popovic M. (2008) *J Exp Biol* 211:467–481.
+[10] Zhang et al. (2020) *Appl Bionics Biomech*, doi:10.1155/2020/7451683, Tables 7–9 (including Riener et al. 2002 and McFadyen & Winter 1988); see `docs/research/reference-ranges.md`.

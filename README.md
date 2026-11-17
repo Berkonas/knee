@@ -10,38 +10,46 @@ joint angles and estimates knee extensor moment, quadriceps force and arm moment
 *measured*, *video estimate*, *model estimate*, *scenario (assumed force)* or *unavailable*, so you always know how
 much to trust it.
 
-> **Status (v1).** Every calculation, the clap sync and all app controls are tested on synthetic data with known
-> answers, and the tests run automatically on macOS, Windows and Linux. Pose and pole tracking on **real
-> recordings of our participants is awaiting validation**. See [Features and limitations](docs/features-and-limitations.md).
+> **Status (v2.1).** Tested on every recording of our 2026-11-16 session (see
+> [the validation report](docs/VALIDATION_REPORT.md)) and by 94 automated tests on macOS, Windows and Linux.
+> Estimated loads (moments, muscle force, power) are calculated **only after you enter each participant's measured
+> mass and height**. Before that they show as *unavailable*. The equations are in
+> [RESEARCH_PIPELINE.md](RESEARCH_PIPELINE.md#estimated-loading-exact-equations).
 
 ---
 
 ## 1. Install (one time)
 
-You need about 2 GB of free disk space and internet for the first install.
+**Easiest: download the ready-made app.** No Python or internet is needed after the download (the pose models
+are included).
 
-**Get the code.** On GitHub, click **Code → Download ZIP** and unzip it somewhere permanent, such as
-`Documents/TrailBuddy`. If you use git, run `git clone https://github.com/Berkonas/knee.git` instead.
+* **macOS (Apple silicon, macOS 12 or newer):** download `TrailBuddy-Analyzer-macOS-arm64.dmg` from the latest
+  [Build apps run](../../actions/workflows/build.yml) (open the run, then **Artifacts**). Open the disk image and
+  drag **TrailBuddy Analyzer** to Applications. The app is not notarised, so the first time, right-click it,
+  choose **Open**, then click **Open** again.
+* **Windows 10/11 (64-bit):** download `TrailBuddy-Analyzer-Windows-x64-Setup.exe` from the same page and run it.
+  It installs for your user only (no administrator rights needed) and can add a desktop shortcut. If SmartScreen
+  appears, click **More info → Run anyway**. The Windows build is built and smoke-tested on GitHub's Windows
+  runners; we have not yet tried it on a real PC.
 
-### macOS (Apple-silicon Macs: M1 or newer)
+**From source (for developers).** You need about 2 GB of free disk space and internet for the first install.
+Get the code: on GitHub, click **Code → Download ZIP**, or run `git clone https://github.com/Berkonas/knee.git`.
+
+### macOS from source
 
 1. Open the folder in Finder, then open `scripts`.
 2. Double-click **`install_mac.command`**. If macOS says it can't be opened, right-click it, choose **Open**,
-   then click **Open** again. This happens only once.
-3. Wait a few minutes. The script asks before installing *uv*, the Python installer it uses.
-4. **TrailBuddy Analyzer** now appears on your Desktop (the app itself lives inside this folder). Double-click it to start.
-   You don't need a terminal after this.
+   then click **Open** again.
+3. The script asks before installing *uv*, the Python installer it uses, then puts **TrailBuddy Analyzer** on your Desktop.
 
-### Windows 10/11
+### Windows from source
 
 1. Open the folder, then open `scripts`.
-2. Double-click **`install_windows.bat`**. If Windows SmartScreen appears, click **More info → Run anyway**.
-3. Wait a few minutes. A **TrailBuddy Analyzer** shortcut appears on your Desktop.
+2. Double-click **`install_windows.bat`**. A **TrailBuddy Analyzer** shortcut appears on your Desktop.
 
-**Standalone builds.** You can also download a ready-made app with no install step from the
-[GitHub Actions "Build apps" workflow](../../actions/workflows/build.yml) (open the latest run, then the
-**Artifacts** section). These builds are unsigned, so see [Troubleshooting](docs/troubleshooting.md) for the
-one-time security prompt.
+**Building the packages yourself:** `uv run pyinstaller packaging/trailbuddy.spec --noconfirm`, then
+`scripts/make_dmg.sh` on macOS, or Inno Setup with `packaging/windows_installer.iss` on Windows. To check a build
+on real recordings without the interface, run the app with `--acceptance <videos folder> <output folder>`.
 
 ## 2. Use it
 

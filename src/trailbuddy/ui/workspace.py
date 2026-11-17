@@ -370,7 +370,7 @@ class WorkspacePage(QWidget):
         self.video.load(None, None, 0)
         self.plots.set_result(None)
         self.header.setText("Select a trial" if self.project else "Open or create a study")
-        self.subheader.setText("Import recordings with the button in the browser." if self.project else "")
+        self.subheader.setText(("Choose a trial in the experiment browser." if self.project.trials else "Import recordings with the button in the browser.") if self.project else "")
         ins = self.inspector
         ins.t_cond.blockSignals(True)
         ins.t_cond.clear()

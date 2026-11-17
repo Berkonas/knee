@@ -26,6 +26,31 @@ def test_quasi_static_knee_hand_calculation():
     assert m == pytest.approx(np.full(50, 35.0))
 
 
+def test_grf_toward_com_hand_calculation():
+    # COP (0.05, 0.05), COM (0.25, 1.05): force tilts 0.2 m forward per 1.0 m up -> F = (140, 700) N.
+    # M_ext = (0.10 - 0.05) * 700 + (0.05 - 0.50) * 140 = 35 - 63 = -28 N*m
+    kin = static_kin(LEG)
+    cop = np.tile([0.05, 0.05], (50, 1))
+    com = np.tile([0.25, 1.05], (50, 1))
+    F = dyn.grf_toward_com(np.full(50, 700.0), cop, com)
+    assert F[0] == pytest.approx([140.0, 700.0])
+    assert dyn.quasi_static_knee(kin, "right", np.full(50, 700.0), cop, com) == pytest.approx(np.full(50, -28.0))
+
+
+def test_force_line_through_knee_gives_zero_moment():
+    kin = static_kin(LEG)
+    cop = np.tile([0.05, 0.05], (50, 1))
+    com = np.tile([0.15, 0.95], (50, 1))  # cop -> knee (0.10, 0.50) -> com are collinear
+    assert dyn.quasi_static_knee(kin, "right", np.full(50, 700.0), cop, com) == pytest.approx(np.zeros(50), abs=1e-9)
+
+
+def test_com_directly_above_cop_equals_vertical_model():
+    kin = static_kin(LEG)
+    cop = np.tile([0.05, 0.05], (50, 1))
+    com = np.tile([0.05, 1.0], (50, 1))
+    assert dyn.quasi_static_knee(kin, "right", np.full(50, 700.0), cop, com) == pytest.approx(np.full(50, 35.0))
+
+
 def test_quasi_static_requires_scale():
     kin = static_kin(LEG)
     kin.units = "px"

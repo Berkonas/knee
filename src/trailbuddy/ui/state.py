@@ -1,6 +1,13 @@
 from __future__ import annotations
 
+import os
+
 from PySide6.QtCore import QObject, QSettings, Signal
+
+
+def app_settings() -> QSettings:
+    """The user's preferences. Tests set TRAILBUDDY_SETTINGS_APP so they never touch the real ones."""
+    return QSettings("TrailBuddy", os.environ.get("TRAILBUDDY_SETTINGS_APP", "Analyzer"))
 
 from ..core.project import Project
 
@@ -15,7 +22,7 @@ class AppState(QObject):
     def __init__(self):
         super().__init__()
         self.project: Project | None = None
-        self.settings = QSettings("TrailBuddy", "Analyzer")
+        self.settings = app_settings()
 
     def set_project(self, p: Project | None) -> None:
         self.project = p

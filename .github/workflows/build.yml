@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   push:
     tags: ["v*"]
+    branches: [main]
 
 permissions:
   contents: write
@@ -38,19 +39,39 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          & "dist/TrailBuddy Analyzer/TrailBuddy Analyzer.exe" --check-pose | Out-Host
-      - name: Zip (macOS)
+          # windowed (no console) app: wait for it and check its exit code
+          $p = Start-Process -FilePath "dist/TrailBuddy Analyzer/TrailBuddy Analyzer.exe" -ArgumentList "--check-pose" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "pose check failed with exit code $($p.ExitCode)" }
+      - name: Disk image (macOS)
         if: runner.os == 'macOS'
-        run: cd dist && ditto -c -k --keepParent "TrailBuddy Analyzer.app" ../${{ matrix.artifact }}.zip
-      - name: Zip (Windows)
+        run: |
+          scripts/make_dmg.sh
+          mv dist/*.dmg ${{ matrix.artifact }}.dmg
+      - name: Installer (Windows)
         if: runner.os == 'Windows'
-        run: Compress-Archive -Path "dist/TrailBuddy Analyzer" -DestinationPath ${{ matrix.artifact }}.zip
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress | Out-Null
+          $v = uv run python -c "import trailbuddy; print(trailbuddy.__version__)"
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$v" packaging\windows_installer.iss
+          Move-Item dist\*-Setup.exe ${{ matrix.artifact }}-Setup.exe
+          # silent install into a temporary folder, then run the installed app's pose check
+          $dir = "$env:RUNNER_TEMP\tb-install"
+          $i = Start-Process -FilePath ".\${{ matrix.artifact }}-Setup.exe" -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/DIR=$dir" -Wait -PassThru
+          if ($i.ExitCode -ne 0) { throw "installer failed with exit code $($i.ExitCode)" }
+          $p = Start-Process -FilePath "$dir\TrailBuddy Analyzer.exe" -ArgumentList "--check-pose" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "installed app pose check failed with exit code $($p.ExitCode)" }
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: ${{ matrix.artifact }}.zip
+          path: |
+            ${{ matrix.artifact }}.dmg
+            ${{ matrix.artifact }}-Setup.exe
+          if-no-files-found: error
       - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ matrix.artifact }}.zip
+          files: |
+            ${{ matrix.artifact }}.dmg
+            ${{ matrix.artifact }}-Setup.exe

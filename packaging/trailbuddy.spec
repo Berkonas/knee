@@ -24,4 +24,4 @@ exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="TrailBuddy Analyzer",
 coll = COLLECT(exe, a.binaries, a.datas, name="TrailBuddy Analyzer")
 if sys.platform == "darwin":
     app = BUNDLE(coll, name="TrailBuddy Analyzer.app", icon=icon, bundle_identifier="edu.classproject.trailbuddy-analyzer",
-                 info_plist={"NSHighResolutionCapable": True, "CFBundleShortVersionString": "1.0.0"})
+                 info_plist={"NSHighResolutionCapable": True, "CFBundleShortVersionString": "2.1.0", "CFBundleVersion": "2.1.0", "LSMinimumSystemVersion": "12.0"})

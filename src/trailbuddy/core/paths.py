@@ -36,4 +36,4 @@ def models_dir() -> Path:
     bundled = resource_root() / "models"
     if not is_frozen():
         return bundled
-    return bundled if any(bundled.glob("*.task")) else user_data_dir() / "models"
+    return bundled if any(bundled.rglob("*.task")) or any(bundled.rglob("*.onnx")) else user_data_dir() / "models"
