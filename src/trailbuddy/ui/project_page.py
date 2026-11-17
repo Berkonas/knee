@@ -6,11 +6,11 @@ from pathlib import Path
 
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog,
                                QFormLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit,
-                               QMessageBox, QPushButton, QSpinBox, QSplitter, QTableWidget, QTableWidgetItem,
+                               QMessageBox, QPushButton, QScrollArea, QSpinBox, QSplitter, QTableWidget, QTableWidgetItem,
                                QVBoxLayout, QWidget)
 from PySide6.QtCore import Qt
 
-from ..core.project import EXPERIMENTS, SEGMENT_FIELDS, CameraVideo, Condition, Participant, Project, Trial, parse_filename
+from ..core.project import EXPERIMENTS, PARTICIPANT_EDIT_FIELDS, SEGMENT_FIELDS, TASKS, CameraVideo, Condition, Participant, Project, Trial, parse_filename
 from .widgets import error_box, page_header, section
 
 VIDEO_FILTER = "Videos (*.mp4 *.mov *.MOV *.MP4 *.avi *.m4v *.mkv)"
@@ -37,37 +37,50 @@ def fill(t: QTableWidget, rows):
 
 
 class ParticipantDialog(QDialog):
-    """Body metrics. Required: mass and height. Optional tape-measure lengths improve the scale estimate."""
+    """Participant information. Required for loads: measured mass and height. Everything else is optional."""
 
     def __init__(self, parent, p: Participant | None = None):
         super().__init__(parent)
-        self.setWindowTitle("Body metrics")
-        self.setMinimumWidth(460)
-        self.setMinimumHeight(600)
-        f = QFormLayout(self)
-        intro = QLabel("Mass and height are required. The optional lengths below make the video scale and "
-                       "segment geometry specific to this person instead of textbook proportions.")
+        self.setWindowTitle("Participant")
+        self.setMinimumWidth(480)
+        outer = QVBoxLayout(self)
+        scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        body = QWidget(); f = QFormLayout(body); scroll.setWidget(body)
+        outer.addWidget(scroll)
+        intro = QLabel("Body mass is required for every force or moment, and height (or a calibrated distance) "
+                       "for distances in metres. Nothing is calculated from default values.")
         intro.setWordWrap(True); intro.setObjectName("muted")
         f.addRow(intro)
         self.pid = QLineEdit(p.id if p else "")
         self.pid.setPlaceholderText("P01 (code only, no names)")
+
         def dsb(lo, hi, dec, suf, val, special=None, tip=""):
             w = QDoubleSpinBox(); w.setRange(lo, hi); w.setDecimals(dec); w.setSuffix(suf)
             if special:
                 w.setSpecialValueText(special)
             w.setValue(val); w.setToolTip(tip)
             return w
-        self.mass = dsb(20, 250, 1, " kg", p.body_mass_kg if p else 70, tip="Measured on a scale, with shoes")
-        self.height = dsb(1, 2.5, 3, " m", p.height_m if p else 1.75, tip="Standing height, with shoes")
-        self.leg = dsb(0, 1.5, 3, " m", (p.leg_length_m or 0) if p else 0, "not measured",
-                       "Greater trochanter to the floor")
+
+        def combo(items, cur):
+            w = QComboBox()
+            for lab, val in items:
+                w.addItem(lab, val)
+            w.setCurrentIndex(max(0, w.findData(cur)))
+            return w
+
+        self.mass = dsb(0, 250, 1, " kg", (p.body_mass_kg or 0) if p else 0, "not entered", "Measured on a scale, with shoes")
+        self.height = dsb(0, 2.5, 3, " m", (p.height_m or 0) if p else 0, "not entered", "Standing height, with shoes")
+        f.addRow("Participant ID", self.pid)
+        f.addRow(section("Required for loads"))
+        f.addRow("Body mass *", self.mass)
+        f.addRow("Height *", self.height)
+        f.addRow(section("Poles"))
         self.pole = dsb(0, 160, 1, " cm", (p.standard_pole_length_cm or 0) if p else 0, "not set",
                         "Standard length: about 90° elbow angle with the tip on level ground")
-        f.addRow("Participant ID", self.pid)
-        f.addRow("Body mass", self.mass)
-        f.addRow("Height", self.height)
         f.addRow("Standard pole length", self.pole)
-        f.addRow(section("Optional segment lengths"))
+        f.addRow(section("Measured segment lengths (optional)"))
+        self.leg = dsb(0, 1.5, 3, " m", (p.leg_length_m or 0) if p else 0, "not measured",
+                       "Greater trochanter to the floor")
         f.addRow("Leg length", self.leg)
         self.seg = {}
         segs = p.segments if p else {}
@@ -75,20 +88,39 @@ class ParticipantDialog(QDialog):
             w = dsb(0, 1.0, 3, " m", segs.get(key) or 0, "not measured", how)
             self.seg[key] = w
             f.addRow(label, w)
+        f.addRow(section("Other information (optional, voluntary)"))
+        self.age = QSpinBox(); self.age.setRange(0, 110); self.age.setSpecialValueText("not given")
+        self.age.setValue((p.age_years or 0) if p else 0)
+        self.sex = QLineEdit(p.sex if p else ""); self.sex.setPlaceholderText("not given")
+        self.sex.setToolTip("Recorded only for reporting. It never replaces this person's measured anatomy.")
+        sides = [("not given", ""), ("Left", "left"), ("Right", "right")]
+        self.dom = combo(sides, p.dominant_leg if p else "")
+        self.lead = combo(sides, p.lead_leg if p else "")
+        self.shoe = QLineEdit(p.footwear if p else ""); self.shoe.setPlaceholderText("e.g. trail runners")
+        self.load = dsb(0, 60, 1, " kg", (p.carried_load_kg or 0) if p else 0, "none", "Backpack or other carried load")
+        f.addRow("Age", self.age)
+        f.addRow("Sex / gender", self.sex)
+        f.addRow("Dominant leg", self.dom)
+        f.addRow("Preferred lead leg", self.lead)
+        f.addRow("Footwear", self.shoe)
+        f.addRow("Carried load", self.load)
         self.notes = QLineEdit(p.notes if p else "")
-        self.notes.setPlaceholderText("e.g. shoe type, preferred lead foot")
         f.addRow("Notes", self.notes)
         if p:
             self.pid.setEnabled(False)
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
-        f.addRow(bb)
+        outer.addWidget(bb)
+        self.resize(500, 680)
 
     def value(self) -> Participant:
         segs = {k: w.value() for k, w in self.seg.items() if w.value() > 0}
-        return Participant(self.pid.text().strip(), self.mass.value(), self.height.value(),
-                           self.leg.value() or None, self.pole.value() or None, segs, self.notes.text())
+        return Participant(self.pid.text().strip(), self.mass.value() or None, self.height.value() or None,
+                           self.leg.value() or None, self.pole.value() or None, segs, self.notes.text(),
+                           age_years=self.age.value() or None, sex=self.sex.text().strip(),
+                           dominant_leg=self.dom.currentData(), lead_leg=self.lead.currentData(),
+                           footwear=self.shoe.text().strip(), carried_load_kg=self.load.value() or None)
 
 
 class TrialDialog(QDialog):
@@ -110,7 +142,26 @@ class TrialDialog(QDialog):
         self.notes = QLineEdit()
         self.step_h = QDoubleSpinBox(); self.step_h.setRange(0, 0.5); self.step_h.setDecimals(3); self.step_h.setSuffix(" m"); self.step_h.setValue(0.17)
         self.step_d = QDoubleSpinBox(); self.step_d.setRange(0, 1); self.step_d.setDecimals(3); self.step_d.setSuffix(" m"); self.step_d.setValue(0.28)
+        self.n_steps = QSpinBox(); self.n_steps.setRange(0, 40); self.n_steps.setSpecialValueText("not counted")
+        self.grade = QDoubleSpinBox(); self.grade.setRange(-45, 45); self.grade.setDecimals(1); self.grade.setSuffix("°")
+        self.grade.setToolTip("Ramp or slope angle; negative = downhill")
+        self.task = QComboBox()
+        for k, lab in TASKS.items():
+            self.task.addItem(lab, k)
+        self.date = QLineEdit(); self.date.setPlaceholderText("YYYY-MM-DD")
+        self.npoles = QComboBox()
+        for lab, v in (("from condition", None), ("none", 0), ("one", 1), ("two", 2)):
+            self.npoles.addItem(lab, v)
+        self.grip = QLineEdit(); self.grip.setPlaceholderText("e.g. strap, hand on top")
+        self.surface = QLineEdit(); self.surface.setPlaceholderText("e.g. painted steel stairs")
+        self.force = QLineEdit(); self.force.setPlaceholderText("none, or e.g. force plate under step 2")
         if trial:
+            self.task.setCurrentIndex(max(0, self.task.findData(trial.task)))
+            self.date.setText(trial.date)
+            self.npoles.setCurrentIndex(max(0, self.npoles.findData(trial.n_poles)))
+            self.grip.setText(trial.grip); self.surface.setText(trial.surface); self.force.setText(trial.force_data)
+            self.n_steps.setValue(int(trial.stair.get("n_steps", 0) or 0))
+            self.grade.setValue(float(trial.stair.get("slope_deg", 0) or 0))
             self.part.setCurrentText(trial.participant_id); self.part.setEnabled(False)
             self.cond.setCurrentIndex(self.cond.findData(trial.condition_code)); self.cond.setEnabled(False)
             self.num.setValue(trial.trial_number); self.num.setEnabled(False)
@@ -131,10 +182,21 @@ class TrialDialog(QDialog):
         f.addRow("Participant", self.part)
         f.addRow("Condition", self.cond)
         f.addRow("Trial number", self.num)
+        f.addRow("Task", self.task)
+        f.addRow("Date", self.date)
+        f.addRow(section("Poles"))
         f.addRow("Pole length", self.pole)
-        f.addRow("Step height", self.step_h)
-        f.addRow("Step depth", self.step_d)
+        f.addRow("Number of poles", self.npoles)
+        f.addRow("Grip", self.grip)
+        f.addRow(section("Stairs or slope"))
+        f.addRow("Riser (step) height", self.step_h)
+        f.addRow("Tread depth", self.step_d)
+        f.addRow("Steps descended", self.n_steps)
+        f.addRow("Ramp angle", self.grade)
+        f.addRow("Surface", self.surface)
+        f.addRow(section("Recording"))
         f.addRow("Camera setup", self.cam)
+        f.addRow("Force data", self.force)
         f.addRow("Notes / deviations", self.notes)
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         bb.accepted.connect(self.accept)
@@ -150,7 +212,11 @@ class TrialDialog(QDialog):
             trial.pole_length_cm = self.pole.value() or trial.pole_length_cm
         trial.camera_config = self.cam.text()
         trial.notes = self.notes.text()
-        trial.stair.update(step_height_m=self.step_h.value(), step_depth_m=self.step_d.value())
+        trial.stair.update(step_height_m=self.step_h.value(), step_depth_m=self.step_d.value(),
+                           n_steps=self.n_steps.value() or None, slope_deg=self.grade.value() or None)
+        trial.task, trial.date = self.task.currentData(), self.date.text().strip()
+        trial.n_poles, trial.grip = self.npoles.currentData(), self.grip.text().strip()
+        trial.surface, trial.force_data = self.surface.text().strip(), self.force.text().strip()
         return trial
 
 
@@ -257,7 +323,8 @@ class ProjectPage(QWidget):
                 t.setRowCount(0)
             return
         self.info.setText(f"{p.name}  ·  {EXPERIMENTS.get(p.experiment, {}).get('name', p.experiment)}  ·  {p.root}")
-        fill(self.ptable, [(q.id, q.body_mass_kg, q.height_m, q.standard_pole_length_cm,
+        fill(self.ptable, [(q.id, q.body_mass_kg if q.body_mass_kg is not None else "missing",
+                            q.height_m if q.height_m is not None else "missing", q.standard_pole_length_cm,
                             f"{len(q.segments)} of {len(SEGMENT_FIELDS)} measured", q.notes)
                            for q in p.participants])
         fill(self.ctable, [(c.code, c.label, "yes" if c.uses_poles else "no",
@@ -345,9 +412,8 @@ class ProjectPage(QWidget):
             except ValueError as e:
                 error_box(self, "Invalid participant", str(e))
                 return
-            p.body_mass_kg, p.height_m, p.leg_length_m = v.body_mass_kg, v.height_m, v.leg_length_m
-            p.segments = v.segments
-            p.standard_pole_length_cm, p.notes, p.segments = v.standard_pole_length_cm, v.notes, v.segments
+            for k in PARTICIPANT_EDIT_FIELDS:
+                setattr(p, k, getattr(v, k))
             self._changed()
 
     def remove_participant(self):

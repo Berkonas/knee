@@ -21,7 +21,7 @@ def far_side_hidden(seed=0):
 
 def test_dynamic_support_with_hidden_far_side_is_not_zero():
     pose, truth = far_side_hidden()
-    s = AnalysisSettings(side="right", scale_method="points", scale_m_per_px=truth.scale_m_per_px,
+    s = AnalysisSettings(load_mode="scenario", side="right", scale_method="points", scale_m_per_px=truth.scale_m_per_px,
                          support_model="dynamic")
     res = analysis.analyse(pose, 70, 1.75, s)
     pk = res.metric("knee_ext_moment_peak")
@@ -32,7 +32,7 @@ def test_dynamic_support_with_hidden_far_side_is_not_zero():
 
 def test_hidden_contralateral_foot_is_flagged():
     pose, truth = far_side_hidden()
-    s = AnalysisSettings(side="right", scale_method="points", scale_m_per_px=truth.scale_m_per_px)
+    s = AnalysisSettings(load_mode="scenario", side="right", scale_method="points", scale_m_per_px=truth.scale_m_per_px)
     res = analysis.analyse(pose, 70, 1.75, s)
     assert res.quality.get("double_support_unknown") is True
     assert any("upper bound" in n for n in res.notes)
@@ -84,7 +84,7 @@ def test_force_plate_only_applied_during_analysed_stance(tmp_path):
     from trailbuddy.core.forces import load_force_csv
     pose, truth = synthetic_descent(duration=3.0)
     pd.DataFrame({"time_s": pose.t, "fz_n": 686.7}).to_csv(tmp_path / "f.csv", index=False)
-    s = AnalysisSettings(side="right", scale_method="points", scale_m_per_px=truth.scale_m_per_px)
+    s = AnalysisSettings(load_mode="measured", side="right", scale_method="points", scale_m_per_px=truth.scale_m_per_px)
     res = analysis.analyse(pose, 70, 1.75, s, forces=load_force_csv(tmp_path / "f.csv"))
     ts = res.timeseries
     assert (ts.loc[ts.right_stance == 0, "grf_vertical_n"] == 0).all()

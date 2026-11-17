@@ -22,6 +22,12 @@ class ExperimentBrowser(QWidget):
     importRequested = Signal()
     editPairing = Signal(str)
     editBody = Signal(str)
+    editTrial = Signal(str)
+    reanalyse = Signal(list)
+    deleteTrials = Signal(list)
+    duplicateTrial = Signal(str)
+    clearCache = Signal(list)
+    restoreRequested = Signal()
 
     def __init__(self, state):
         super().__init__()
@@ -55,6 +61,7 @@ class ExperimentBrowser(QWidget):
         self.tree.setHeaderHidden(True)
         self.tree.setIndentation(14)
         self.tree.setUniformRowHeights(True)
+        self.tree.setSelectionMode(QTreeWidget.SelectionMode.ExtendedSelection)
         self.tree.itemSelectionChanged.connect(self._selected)
         self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self._menu)
@@ -100,8 +107,8 @@ class ExperimentBrowser(QWidget):
             if not trials and (text or flt != "all"):
                 continue
             pi = QTreeWidgetItem([f"{part.id}  ·  {len(trials)} trials" + ("" if part.metrics_entered else "  ·  !")])
-            pi.setToolTip(0, f"{part.body_mass_kg:g} kg, {part.height_m:g} m" + ("" if part.metrics_entered else
-                             "\nBody metrics are placeholders: right-click > Body metrics…"))
+            pi.setToolTip(0, f"{part.body_mass_kg:g} kg, {part.height_m:g} m" if part.metrics_entered else
+                          f"{' and '.join(part.missing()).capitalize()} not entered: right-click > Body metrics…")
             pi.setData(0, Qt.ItemDataRole.UserRole, ("participant", part.id))
             f = pi.font(0)
             f.setBold(True)
@@ -160,12 +167,31 @@ class ExperimentBrowser(QWidget):
 
     def _menu(self, pos):
         it = self.tree.itemAt(pos)
-        if it is None:
-            return
-        kind, val = it.data(0, Qt.ItemDataRole.UserRole)
         m = QMenu(self)
+        kind, val = it.data(0, Qt.ItemDataRole.UserRole) if it is not None else (None, None)
+        sel = self.selected_trials() or ([val] if kind in ("trial", "video") else [])
         if kind in ("trial", "video"):
+            m.addAction("Trial details…", lambda: self.editTrial.emit(val))
             m.addAction("Edit pairing and sync…", lambda: self.editPairing.emit(val))
+            m.addAction("Duplicate trial", lambda: self.duplicateTrial.emit(val))
+            m.addSeparator()
         if kind == "participant":
-            m.addAction("Body metrics…", lambda: self.editBody.emit(val))
+            m.addAction("Participant information…", lambda: self.editBody.emit(val))
+            sel = [t.id for t in self.state.project.trials if t.participant_id == val] if self.state.project else []
+            m.addSeparator()
+        if sel:
+            n = len(sel)
+            m.addAction(f"Re-analyse {n} trial{'s' if n > 1 else ''}", lambda: self.reanalyse.emit(sel))
+            m.addAction(f"Clear tracking cache of {n} trial{'s' if n > 1 else ''}", lambda: self.clearCache.emit(sel))
+            m.addAction(f"Delete {n} trial{'s' if n > 1 else ''}…", lambda: self.deleteTrials.emit(sel))
+            m.addSeparator()
+        m.addAction("Restore deleted trials…", self.restoreRequested.emit)
         m.exec(self.tree.viewport().mapToGlobal(pos))
+
+    def selected_trials(self) -> list[str]:
+        out = []
+        for it in self.tree.selectedItems():
+            kind, val = it.data(0, Qt.ItemDataRole.UserRole) or (None, None)
+            if kind in ("trial", "video") and val not in out:
+                out.append(val)
+        return out

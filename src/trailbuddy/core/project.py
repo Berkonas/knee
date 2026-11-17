@@ -11,7 +11,10 @@ import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+
+TASKS = {"stair_descent": "Stair descent", "stair_ascent": "Stair ascent", "step_down": "Single step-down",
+         "level_walk": "Level walking", "downhill_walk": "Downhill walking", "uphill_walk": "Uphill walking"}
 
 
 @dataclass
@@ -42,29 +45,49 @@ SEGMENT_FIELDS = {
     "forearm_m": ("Forearm length", "Outer elbow to the wrist bone on the little-finger side (ulnar styloid)"),
 }
 
+PARTICIPANT_EDIT_FIELDS = ("body_mass_kg", "height_m", "leg_length_m", "standard_pole_length_cm", "segments", "notes",
+                           "age_years", "sex", "dominant_leg", "lead_leg", "footwear", "carried_load_kg")
+
 PID_RE = re.compile(r"^[A-Za-z0-9_-]{1,16}$")
 
 
 @dataclass
 class Participant:
+    """A participant. Body mass and height are None until measured values are entered: nothing that
+    depends on them (scale from height, any force or moment) is calculated from a default."""
+
     id: str
-    body_mass_kg: float
-    height_m: float
+    body_mass_kg: float | None = None   # required for every body-weight-dependent quantity
+    height_m: float | None = None       # used for the video scale when no scene calibration exists
     leg_length_m: float | None = None
     standard_pole_length_cm: float | None = None
     segments: dict = field(default_factory=dict)  # measured segment lengths, keys in SEGMENT_FIELDS (m)
     notes: str = ""
-    metrics_entered: bool = True  # False when mass/height are placeholders (e.g. after auto-import)
+    age_years: int | None = None        # optional, voluntary
+    sex: str = ""                       # optional, voluntary; never used to replace measured anatomy
+    dominant_leg: str = ""              # 'left' | 'right' | ''
+    lead_leg: str = ""                  # preferred leading leg on descent
+    footwear: str = ""
+    carried_load_kg: float | None = None
+
+    @property
+    def metrics_entered(self) -> bool:
+        return self.body_mass_kg is not None and self.height_m is not None
+
+    def missing(self) -> list[str]:
+        return [lab for lab, v in (("body mass", self.body_mass_kg), ("height", self.height_m)) if v is None]
 
     def validate(self) -> None:
         if not PID_RE.match(self.id):
             raise ValueError("Participant ID must be a short code like P01 (letters, digits, - or _).")
-        if not (20 <= self.body_mass_kg <= 250):
+        if self.body_mass_kg is not None and not (20 <= self.body_mass_kg <= 250):
             raise ValueError("Body mass must be between 20 and 250 kg.")
-        if not (1.0 <= self.height_m <= 2.5):
+        if self.height_m is not None and not (1.0 <= self.height_m <= 2.5):
             raise ValueError("Height must be between 1.0 and 2.5 m.")
+        if self.carried_load_kg is not None and not (0 <= self.carried_load_kg <= 60):
+            raise ValueError("Carried load must be between 0 and 60 kg.")
         for k, v in self.segments.items():
-            if k in SEGMENT_FIELDS and v is not None and not (0.03 <= v <= 0.4 * self.height_m):
+            if k in SEGMENT_FIELDS and v is not None and self.height_m and not (0.03 <= v <= 0.4 * self.height_m):
                 raise ValueError(f"{SEGMENT_FIELDS[k][0]} of {v} m is not plausible for a height of {self.height_m} m.")
 
 
@@ -90,6 +113,13 @@ class Trial:
     settings: dict = field(default_factory=dict)    # analysis settings snapshot
     notes: str = ""
     status: str = "new"                             # new | analysed | error
+    date: str = ""                                  # ISO date of the recording
+    task: str = "stair_descent"                     # key of TASKS
+    n_poles: int | None = None                      # 0, 1 or 2 (None = from the condition)
+    grip: str = ""                                  # e.g. strap, no strap, top of handle
+    surface: str = ""
+    force_data: str = ""                            # description of force data available, if any
+    segments: list[dict] = field(default_factory=list)  # candidate movement segments {start_s, end_s, label, source}
 
     @property
     def id(self) -> str:
@@ -159,6 +189,91 @@ class Project:
     def remove_trial(self, tid: str) -> None:
         self.trials = [t for t in self.trials if t.id != tid]
 
+    # ---- safe deletion (recoverable) ----------------------------------------------------
+    def trash_dir(self) -> Path:
+        assert self.root is not None
+        return self.root / ".trash"
+
+    def delete_trials(self, tids: list[str]) -> list[Path]:
+        """Move trials to <study>/.trash: their study entry and derived results. Source videos are never touched."""
+        import shutil
+        import time
+
+        out = []
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        for tid in tids:
+            t = self.trial(tid)
+            dest = self.trash_dir() / f"{stamp}_{tid}"
+            dest.mkdir(parents=True, exist_ok=True)
+            (dest / "trial.json").write_text(json.dumps(asdict(t), indent=2))
+            src = self.root / "trials" / tid
+            if src.exists():
+                shutil.move(str(src), str(dest / "results"))
+            self.remove_trial(tid)
+            out.append(dest)
+        self.save()
+        return out
+
+    def deleted_trials(self) -> list[tuple[Path, str]]:
+        d = self.trash_dir()
+        if not d.exists():
+            return []
+        return sorted(((p, p.name.split("_", 1)[-1]) for p in d.iterdir() if (p / "trial.json").exists()),
+                      reverse=True)
+
+    def restore_trial(self, trash_entry: Path) -> Trial:
+        import shutil
+
+        t = _trial_from_dict(json.loads((trash_entry / "trial.json").read_text()), self.root)
+        if any(q.id == t.id for q in self.trials):
+            raise ValueError(f"A trial {t.id} already exists; rename or delete it first.")
+        self.trials.append(t)
+        if (trash_entry / "results").exists():
+            shutil.move(str(trash_entry / "results"), str(self.root / "trials" / t.id))
+        shutil.rmtree(trash_entry)
+        self.save()
+        return t
+
+    def rename_trial(self, tid: str, condition_code: str | None = None, trial_number: int | None = None) -> Trial:
+        """Reassign a trial's condition and/or number; its results folder follows the new ID."""
+        t = self.trial(tid)
+        new = Trial(**{**asdict(t), "videos": t.videos,
+                       "condition_code": condition_code or t.condition_code,
+                       "trial_number": trial_number or t.trial_number})
+        self.condition(new.condition_code)
+        if new.id != tid and any(q.id == new.id for q in self.trials):
+            raise ValueError(f"Trial {new.id} already exists.")
+        t.condition_code, t.trial_number = new.condition_code, new.trial_number
+        old_dir = self.root / "trials" / tid
+        if new.id != tid and old_dir.exists():
+            old_dir.rename(self.root / "trials" / new.id)
+        self.save()
+        return t
+
+    def duplicate_trial(self, tid: str) -> Trial:
+        t = self.trial(tid)
+        d = asdict(t)
+        d.update(trial_number=self.next_trial_number(t.participant_id, t.condition_code), status="new",
+                 notes=(t.notes + " (copy)").strip())
+        new = _trial_from_dict(d, self.root)
+        self.trials.append(new)
+        self.save()
+        return new
+
+    def clear_cache(self, tids: list[str] | None = None) -> int:
+        """Delete generated tracking caches (all, or those of the given trials' videos). Returns files removed."""
+        assert self.root is not None
+        cache = self.root / "cache"
+        if not cache.exists():
+            return 0
+        stems = None if tids is None else {Path(v.path).stem for tid in tids for v in self.trial(tid).videos}
+        n = 0
+        for f in cache.iterdir():
+            if f.is_file() and (stems is None or f.name.split(".")[0] in stems):
+                f.unlink()
+                n += 1
+        return n
+
     def next_trial_number(self, pid: str, code: str) -> int:
         nums = [t.trial_number for t in self.trials if t.participant_id == pid and t.condition_code == code]
         return max(nums, default=0) + 1
@@ -184,6 +299,14 @@ class Project:
     def save(self) -> Path:
         assert self.root is not None
         path = self.root / "project.json"
+        if path.exists():  # keep the last 20 versions of the study file
+            import time
+
+            bdir = self.root / "backups"
+            bdir.mkdir(exist_ok=True)
+            (bdir / f"project-{time.strftime('%Y%m%d-%H%M%S')}.json").write_bytes(path.read_bytes())
+            for old in sorted(bdir.glob("project-*.json"))[:-20]:
+                old.unlink()
         tmp = path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(self.to_dict(), indent=2))
         tmp.replace(path)
@@ -194,16 +317,31 @@ class Project:
         root = Path(root)
         path = root / "project.json" if root.is_dir() else root
         d = json.loads(path.read_text())
-        trials = []
-        for t in d.get("trials", []):
-            t = dict(t)
-            t["videos"] = [CameraVideo(**{**v, "path": resolve_video_path(v["path"], path.parent)})
-                           for v in t.get("videos", [])]
-            trials.append(Trial(**t))
+        trials = [_trial_from_dict(t, path.parent) for t in d.get("trials", [])]
         return cls(name=d["name"], experiment=d.get("experiment", "exp1"),
-                   conditions=[Condition(**c) for c in d.get("conditions", [])],
-                   participants=[Participant(**p) for p in d.get("participants", [])],
+                   conditions=[Condition(**_known(Condition, c)) for c in d.get("conditions", [])],
+                   participants=[_participant_from_dict(p) for p in d.get("participants", [])],
                    trials=trials, root=path.parent)
+
+
+def _known(cls, d: dict) -> dict:
+    """Keep only fields the dataclass knows (studies written by newer versions still open)."""
+    names = set(cls.__dataclass_fields__)
+    return {k: v for k, v in d.items() if k in names}
+
+
+def _participant_from_dict(d: dict) -> Participant:
+    d = dict(d)
+    if d.pop("metrics_entered", True) is False:  # schema 1: placeholder mass/height were stored as numbers
+        d["body_mass_kg"] = d["height_m"] = None
+    return Participant(**_known(Participant, d))
+
+
+def _trial_from_dict(d: dict, root: Path) -> Trial:
+    d = dict(d)
+    d["videos"] = [CameraVideo(**_known(CameraVideo, {**v, "path": resolve_video_path(v["path"], root)}))
+                   for v in d.get("videos", [])]
+    return Trial(**_known(Trial, d))
 
 
 def resolve_video_path(stored: str, project_root: Path) -> str:

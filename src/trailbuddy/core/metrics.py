@@ -163,6 +163,24 @@ INFO: dict[str, MetricInfo] = {
         "Shows how hard the quadriceps brake the body at the moment of greatest demand.",
         "Change in peak eccentric braking demand between conditions.",
         "Depends on moment model and on differentiated angles (noise-sensitive); not fatigue."),
+    "knee_ext_moment_peak_nm": MetricInfo(
+        "Peak knee extensor moment (absolute)", "N·m",
+        "Largest internal knee extensor moment during stance.",
+        "Absolute demand on the knee extensors for this person.",
+        "Larger or smaller net extensor demand between conditions, within one participant.",
+        "Net joint moment is not joint contact force or muscle force."),
+    "elbow_moment_peak_per_kg": MetricInfo(
+        "Peak elbow moment per kg", "N·m/kg",
+        "Peak elbow moment divided by body mass.",
+        "Compares upper-limb demand across people of different size.",
+        "Relative arm demand when the same pole-force assumption is used.",
+        "Depends directly on the assumed or measured pole force."),
+    "shoulder_moment_peak_per_kg": MetricInfo(
+        "Peak shoulder moment per kg", "N·m/kg",
+        "Peak shoulder moment divided by body mass.",
+        "Compares shoulder demand across people of different size.",
+        "Relative shoulder demand when the same pole-force assumption is used.",
+        "Not shoulder joint contact force; depends directly on the pole force."),
     "elbow_moment_peak": MetricInfo(
         "Peak elbow moment", "N·m",
         "Quasi-static internal elbow moment from the pole force at the hand.",
@@ -242,10 +260,10 @@ CATEGORIES: dict[str, list[str]] = {
                             "front_step_width_ratio_mean"],
     "Pole mechanics": ["pole_angle_at_contact", "pole_contact_time", "pole_plant_timing", "front_pole_tip_spread_mean",
                        "pole_support_fraction"],
-    "Estimated loading": ["knee_ext_moment_peak", "quad_force_peak", "quad_force_peak_bw", "knee_ext_impulse_total",
+    "Estimated loading": ["knee_ext_moment_peak", "knee_ext_moment_peak_nm", "quad_force_peak", "quad_force_peak_bw", "knee_ext_impulse_total",
                           "knee_ext_impulse_per_step", "knee_ext_impulse_per_m", "knee_neg_work",
-                          "knee_power_absorption_peak", "elbow_moment_peak", "shoulder_moment_peak",
-                          "tibiofemoral_compression"],
+                          "knee_power_absorption_peak", "elbow_moment_peak", "elbow_moment_peak_per_kg",
+                          "shoulder_moment_peak", "shoulder_moment_peak_per_kg", "tibiofemoral_compression"],
 }
 
 

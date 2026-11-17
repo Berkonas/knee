@@ -67,8 +67,7 @@ def apply_plan(project: Project, plan: dict, default_condition: str | None = Non
     groups = plan["groups"]
     for pid in sorted(set(groups.values())):
         if pid and not any(p.id == pid for p in project.participants):
-            project.participants.append(Participant(pid, 70.0, 1.70, notes="Placeholder body metrics: edit me",
-                                                    metrics_entered=False))
+            project.participants.append(Participant(pid, notes="Body mass and height not yet entered"))
     if not project.conditions:
         project.conditions = [Condition("C0", "No poles", False), Condition("C1", "Standard poles", True, 0.0)]
     cond = default_condition or ("C1" if any(c.code == "C1" for c in project.conditions) else project.conditions[0].code)
@@ -96,7 +95,7 @@ def apply_plan(project: Project, plan: dict, default_condition: str | None = Non
             continue
         pid = groups.get((f or s).name) or "P99"
         if not any(q.id == pid for q in project.participants):
-            project.participants.append(Participant(pid, 70.0, 1.70, notes="Placeholder", metrics_entered=False))
+            project.participants.append(Participant(pid, notes="Body mass and height not yet entered"))
         vids = ([cam(s, "side")] if s else []) + ([cam(f, "front")] if f else [])
         t = Trial(pid, "UNSET", project.next_trial_number(pid, "UNSET"), vids)
         t.sync = ({"offset_s": -p.offset_s, "method": "audio-envelope", "pair_score": p.score,

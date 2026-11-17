@@ -78,12 +78,12 @@ def _acceptance(folder: Path, out: Path) -> int:
     plan = importer.organise(folder, n_participants=1)
     trials = importer.apply_plan(proj, plan)
     for p in proj.participants:
-        p.body_mass_kg, p.height_m, p.metrics_entered = 75.0, 1.75, True
+        p.body_mass_kg, p.height_m = 75.0, 1.75  # labelled test values
     proj.save()
     print(f"imported {len(trials)} trial(s): " + ", ".join(f"{t.id} ({'+'.join(v.role for v in t.videos)})" for t in trials))
     ok = True
     for t in trials:
-        res = run_pair(proj, t, AnalysisSettings(), {"backend": "rtmpose", "mode": "balanced", "stride": 1})
+        res = run_pair(proj, t, AnalysisSettings(load_mode="scenario"), {"backend": "rtmpose", "mode": "balanced", "stride": 1})
         export.export_trial(proj, t, res, out / "export", annotated_video=False)
         ts = pd.read_csv(out / "export" / t.participant_id / t.id / "timeseries.csv")
         same = np.allclose(ts.to_numpy(float), res.timeseries.to_numpy(float), rtol=1e-6, atol=1e-6, equal_nan=True)

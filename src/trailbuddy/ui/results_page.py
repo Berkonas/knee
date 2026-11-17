@@ -178,6 +178,8 @@ class ResultsPage(QWidget):
             c = compare.stance_curves(res, f"{res.side}_knee_extensor_moment_nm")
             if len(c):
                 mass = p.participant(p.trial(tid).participant_id).body_mass_kg
+                if not mass:
+                    continue
                 by.setdefault(p.trial(tid).condition_code, []).append(c / mass)
         by = {k: np.vstack(v) for k, v in sorted(by.items())}
         return plots.fig_stance_normalised(by, "Knee extensor moment (N·m/kg)",

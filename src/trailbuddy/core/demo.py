@@ -33,7 +33,7 @@ def build_demo_project(root: str | Path) -> Project:
                 pose, truth = synthetic_descent(duration=4.0, fps=60, height_m=h, noise_px=0.8, seed=seed,
                                                 step_time=0.8 + 0.02 * (seed % 3) + (0.04 if uses else 0.0))
                 seed += 1
-                s = AnalysisSettings(side="right", scale_method="points", scale_m_per_px=truth.scale_m_per_px,
+                s = AnalysisSettings(load_mode="scenario", side="right", scale_method="points", scale_m_per_px=truth.scale_m_per_px,
                                      pole_force_mode="scenario" if uses else "none", pole_pct_bw=10.0,
                                      descent_height_m=0.68 + lean_bias)
                 poles = {"right": PoleTrack(pose.t, truth.pole_tip_px)} if uses else None

@@ -126,7 +126,7 @@ def test_analysis_reports_measured_segment_consistency():
     from trailbuddy.core import analysis
     from trailbuddy.core.analysis import AnalysisSettings
     p, _ = synthetic_descent(duration=3.0, height_m=1.75)
-    res = analysis.analyse(p, 70, 1.75, AnalysisSettings(side="right"),
+    res = analysis.analyse(p, 70, 1.75, AnalysisSettings(load_mode="scenario", side="right"),
                            segments={"thigh_m": 0.245 * 1.75, "shank_m": 0.246 * 1.75})
     assert res.quality["thigh_shank_ratio_video"] == pytest.approx(res.quality["thigh_shank_ratio_measured"], rel=0.02)
     assert any("measured thigh + shank" in n for n in res.notes)

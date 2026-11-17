@@ -13,7 +13,7 @@ from trailbuddy.core.synthetic import synthetic_descent
 
 def run(uses_poles=False, mode="none", pct=10.0, seed=0, **kw):
     pose, truth = synthetic_descent(duration=4.0, fps=60, noise_px=0.5, seed=seed)
-    s = AnalysisSettings(side="right", scale_method="points", scale_m_per_px=truth.scale_m_per_px,
+    s = AnalysisSettings(load_mode="scenario", side="right", scale_method="points", scale_m_per_px=truth.scale_m_per_px,
                          pole_force_mode=mode, pole_pct_bw=pct, descent_height_m=0.68, **kw)
     poles = {"right": PoleTrack(pose.t, truth.pole_tip_px)} if uses_poles else None
     return analysis.analyse(pose, 70.0, 1.75, s, uses_poles, poles), truth
@@ -72,7 +72,7 @@ def test_no_scale_makes_kinetics_unavailable():
 
 def test_height_scale_used_by_default():
     pose, truth = synthetic_descent(duration=3.0)
-    res = analysis.analyse(pose, 70, 1.75, AnalysisSettings())
+    res = analysis.analyse(pose, 70, 1.75, AnalysisSettings(load_mode="scenario"))
     assert res.quality["scale_m_per_px"] == pytest.approx(truth.scale_m_per_px, rel=0.02)
 
 
@@ -82,7 +82,7 @@ def test_measured_grf_path_uses_inverse_dynamics(tmp_path):
     t = pose.t
     pd.DataFrame({"time_s": t, "fz_n": np.full(len(t), 686.7), "fx_n": 0.0}).to_csv(tmp_path / "f.csv", index=False)
     fd = load_force_csv(tmp_path / "f.csv")
-    s = AnalysisSettings(side="right", scale_method="points", scale_m_per_px=truth.scale_m_per_px)
+    s = AnalysisSettings(load_mode="measured", side="right", scale_method="points", scale_m_per_px=truth.scale_m_per_px)
     res = analysis.analyse(pose, 70, 1.75, s, forces=fd)
     assert res.metric("knee_ext_moment_peak").kind == "model"
     assert "right_hip_extensor_moment_nm" in res.timeseries

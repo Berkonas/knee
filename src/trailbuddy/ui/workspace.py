@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QHBoxLayout, QHeaderView,
-                               QLabel, QLineEdit, QMessageBox, QProgressBar, QPushButton, QScrollArea, QSpinBox,
+                               QInputDialog, QLabel, QLineEdit, QMessageBox, QProgressBar, QPushButton, QScrollArea, QSpinBox,
                                QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 from ..core import pipeline, sync
@@ -49,6 +49,10 @@ def card(title: str | None = None) -> tuple[QFrame, QVBoxLayout]:
         t.setObjectName("cardTitle")
         v.addWidget(t)
     return f, v
+
+
+def fmt_or(v, unit: str) -> str:
+    return f"{v:g} {unit}" if v is not None else f"{unit}: not entered"
 
 
 class Inspector(QWidget):
@@ -344,6 +348,12 @@ class WorkspacePage(QWidget):
         ins.btn_pair.clicked.connect(self.edit_pairing)
         self.browser.editPairing.connect(lambda tid: (self.open_trial(tid), self.edit_pairing()))
         self.browser.editBody.connect(self._edit_body_pid)
+        self.browser.editTrial.connect(self.edit_trial_details)
+        self.browser.reanalyse.connect(self.run_all)
+        self.browser.deleteTrials.connect(self.delete_trials)
+        self.browser.duplicateTrial.connect(self.duplicate_trial)
+        self.browser.clearCache.connect(self.clear_cache)
+        self.browser.restoreRequested.connect(self.restore_trials)
         for wdg in (ins.t_cond,):
             wdg.currentIndexChanged.connect(self._trial_meta_changed)
         ins.t_num.valueChanged.connect(self._trial_meta_changed)
@@ -391,14 +401,14 @@ class WorkspacePage(QWidget):
         self.header.setText(f"{p.id} · Trial {t.trial_number} · {c.label}")
         views = " + ".join(v for v, x in (("side", side), ("front", front)) if x)
         self.subheader.setText(f"{views} view{'s' if side and front else ''} · {t.id}"
-                               + ("" if p.metrics_entered else " · body metrics are placeholders"))
+                               + ("" if p.metrics_entered else f" · {' and '.join(p.missing())} not entered"))
         errs = self.video.load(side.path if side else None, front.path if front else None,
                                float(t.sync.get("offset_s", 0.0)))
         if errs:
             error_box(self, "Cannot open video", "\n".join(errs))
         self._attach_cached()
         ins = self.inspector
-        ins.t_part.setText(f"{p.id} ({p.body_mass_kg:g} kg, {p.height_m:g} m)")
+        ins.t_part.setText(f"{p.id} ({fmt_or(p.body_mass_kg, 'kg')}, {fmt_or(p.height_m, 'm')})")
         ins.t_cond.setCurrentIndex(max(0, ins.t_cond.findData(t.condition_code)))
         ins.t_num.setValue(t.trial_number)
         ins.t_pole.setValue(t.pole_length_cm or 0)
@@ -530,10 +540,17 @@ class WorkspacePage(QWidget):
             return
         ins = self.inspector
         t = self.trial
-        new_code = ins.t_cond.currentData()
-        if new_code and new_code != t.condition_code:
-            t.condition_code = new_code
-        t.trial_number = ins.t_num.value()
+        new_code = ins.t_cond.currentData() or t.condition_code
+        if new_code != t.condition_code or ins.t_num.value() != t.trial_number:
+            try:  # the trial ID changes: move its results with it and refuse duplicates
+                self.project.rename_trial(t.id, new_code, ins.t_num.value())
+            except (ValueError, KeyError) as e:
+                self._loading = True
+                ins.t_cond.setCurrentIndex(max(0, ins.t_cond.findData(t.condition_code)))
+                ins.t_num.setValue(t.trial_number)
+                self._loading = False
+                error_box(self, "Cannot change the trial", str(e))
+                return
         t.pole_length_cm = ins.t_pole.value() or None
         t.notes = ins.t_notes.text()
         self.state.save()
@@ -694,16 +711,18 @@ class WorkspacePage(QWidget):
         if "cancelled" not in msg.lower():
             error_box(self, "Analysis failed", msg)
 
-    def run_all(self):
+    def run_all(self, tids: list[str] | None = None):
         if self.project is None or not self.project.trials:
             return
+        if tids is not None and not isinstance(tids, list):  # clicked() passes a bool
+            tids = None
         try:
             settings = self.form.settings()
         except ValueError as e:
             error_box(self, "Check settings", str(e))
             return
         proc = self.proc()
-        trials = list(self.project.trials)
+        trials = [t for t in self.project.trials if tids is None or t.id in tids]
 
         def job(progress, cancelled):
             import copy
@@ -755,12 +774,63 @@ class WorkspacePage(QWidget):
             except ValueError as e:
                 error_box(self, "Check body metrics", str(e))
                 return
-            for k in ("body_mass_kg", "height_m", "leg_length_m", "standard_pole_length_cm", "segments", "notes"):
+            from ..core.project import PARTICIPANT_EDIT_FIELDS
+            for k in PARTICIPANT_EDIT_FIELDS:
                 setattr(part, k, getattr(v, k))
-            part.metrics_entered = True
             self.state.save()
             self.state.trialsChanged.emit()
             self.state.status.emit("Body metrics saved. Re-analyse to use them.")
+
+    # ---- trial management -------------------------------------------------------------------
+    def edit_trial_details(self, tid: str):
+        from .project_page import TrialDialog
+        t = self.project.trial(tid)
+        dlg = TrialDialog(self, self.project, t)
+        if dlg.exec():
+            dlg.apply(t, t.videos)
+            self.state.save()
+            self.state.trialsChanged.emit()
+
+    def delete_trials(self, tids: list[str]):
+        n = len(tids)
+        msg = (f"Delete {n} trial{'s' if n > 1 else ''} ({', '.join(tids[:6])}{'…' if n > 6 else ''})?\n\n"
+               "The trials and their analysis results move to the study's trash and can be restored "
+               "(right-click > Restore deleted trials). The original video files are not touched.")
+        if QMessageBox.question(self, "Delete trials", msg) != QMessageBox.StandardButton.Yes:
+            return
+        if self.trial and self.trial.id in tids:
+            self.trial, self.res = None, None
+            self.video.load(None, None, 0.0)
+        self.project.delete_trials(tids)
+        self.state.trialsChanged.emit()
+        self.state.status.emit(f"Deleted {n} trial(s). Restore them from the browser's right-click menu.")
+
+    def restore_trials(self):
+        entries = self.project.deleted_trials() if self.project else []
+        if not entries:
+            QMessageBox.information(self, "Restore trials", "There are no deleted trials in this study.")
+            return
+        labels = [f"{tid}  (deleted {e.name[:8]} {e.name[9:15]})" for e, tid in entries]
+        choice, ok = QInputDialog.getItem(self, "Restore trial", "Deleted trial:", labels, 0, False)
+        if not ok:
+            return
+        entry = entries[labels.index(choice)][0]
+        try:
+            t = self.project.restore_trial(entry)
+        except ValueError as e:
+            error_box(self, "Cannot restore", str(e))
+            return
+        self.state.trialsChanged.emit()
+        self.browser.select_trial(t.id)
+
+    def duplicate_trial(self, tid: str):
+        t = self.project.duplicate_trial(tid)
+        self.state.trialsChanged.emit()
+        self.browser.select_trial(t.id)
+
+    def clear_cache(self, tids: list[str]):
+        n = self.project.clear_cache(tids)
+        self.state.status.emit(f"Removed {n} cached tracking file(s). Tracking reruns at the next analysis.")
 
     def edit_pairing(self):
         from .pairing_dialog import PairingDialog

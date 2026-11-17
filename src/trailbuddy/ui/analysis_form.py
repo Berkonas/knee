@@ -103,10 +103,16 @@ class AnalysisForm(QObject):
         self.forces_box = QWidget()
         v = QVBoxLayout(self.forces_box)
         v.setContentsMargins(0, 0, 0, 0)
-        v.addWidget(hint("Video shows movement, not force. Without a force plate the app uses body weight; pole "
-                         "force must be assumed (scenario) or measured with a load cell."))
+        v.addWidget(hint("Video shows movement, not force. A: angles and timing only. B: knee and arm moments "
+                         "from stated assumptions. C: loads from imported force measurements."))
         fw = QWidget()
         f = form(fw)
+        self.load_mode = QComboBox()
+        self.load_mode.addItem("A · Video-only kinematics", "video")
+        self.load_mode.addItem("B · Assumption-based scenario", "scenario")
+        self.load_mode.addItem("C · Measured forces", "measured")
+        self.load_mode.setToolTip("Forces and moments are only estimated in mode B (labelled 'scenario') or C.")
+        f.addRow("Load analysis", self.load_mode)
         self.pole_mode = QComboBox()
         self.pole_mode.addItem("Not modelled", "none")
         self.pole_mode.addItem("Scenario: assumed pole force", "scenario")
@@ -163,8 +169,9 @@ class AnalysisForm(QObject):
 
         self.force_file = ""
         self.pole_mode.currentIndexChanged.connect(self._sync_enabled)
+        self.load_mode.currentIndexChanged.connect(self._sync_enabled)
         self.scale_method.currentIndexChanged.connect(self._sync_enabled)
-        for w in (self.scale_method, self.side, self.pole_mode, self.support, self.grf_dir, self.model):
+        for w in (self.scale_method, self.side, self.load_mode, self.pole_mode, self.support, self.grf_dir, self.model):
             w.currentIndexChanged.connect(lambda *_: self.changed.emit())
         for w in (self.scale_dist, self.step_h, self.pole_pct, self.cutoff, self.cop, self.moment_arm):
             w.valueChanged.connect(lambda *_: self.changed.emit())
@@ -176,7 +183,10 @@ class AnalysisForm(QObject):
             w.setEnabled(on)
 
     def _sync_enabled(self):
-        self.pole_pct.setEnabled(self.pole_mode.currentData() == "scenario")
+        mode = self.load_mode.currentData()
+        for w in (self.pole_mode, self.support, self.grf_dir, self.cop, self.moment_arm):
+            w.setEnabled(mode != "video")
+        self.pole_pct.setEnabled(mode == "scenario" and self.pole_mode.currentData() == "scenario")
         pts = self.scale_method.currentData() == "points"
         self.btn_pick_scale.setEnabled(pts)
         self.scale_dist.setEnabled(pts)
@@ -253,7 +263,7 @@ class AnalysisForm(QObject):
         return AnalysisSettings(
             side=self.side.currentData(), cutoff_hz=self.cutoff.value(), scale_method=method,
             scale_m_per_px=sp, support_model=self.support.currentData(), cop_fraction=self.cop.value(),
-            grf_direction=self.grf_dir.currentData(),
+            grf_direction=self.grf_dir.currentData(), load_mode=self.load_mode.currentData(),
             moment_arm_m=self.moment_arm.value() / 100, pole_force_mode=self.pole_mode.currentData(),
             pole_pct_bw=self.pole_pct.value(), force_offset_s=self.force_offset.value(),
             descent_height_m=self.step_h.value() * n if n else None)
@@ -271,6 +281,7 @@ class AnalysisForm(QObject):
         setc(self.side, s.get("side", "auto"))
         setc(self.support, s.get("support_model", "static"))
         setc(self.grf_dir, s.get("grf_direction", "com"))
+        setc(self.load_mode, s.get("load_mode", "video"))
         setc(self.pole_mode, s.get("pole_force_mode", "none"))
         setc(self.model, s.get("pose_model", "full"))
         self.cutoff.setValue(s.get("cutoff_hz", 6.0))
