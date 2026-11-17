@@ -188,9 +188,18 @@ def export_trial(project, trial, res, out_dir, processing: dict | None = None, a
             "processing": processing or {}, "quality": res.quality, "notes": res.notes}
     (out / "processing_settings.json").write_text(json.dumps(meta, indent=2, default=str))
     files.append(out / "processing_settings.json")
-    for name, fig in (("timeline", plots.fig_timeline(res, trial.id)), ("leg_motion", plots.fig_stick_strip(res)),
-                      ("kinematics", plots.fig_kinematics(res)), ("knee_load", plots.fig_knee_load(res))):
-        files += plots.save(fig, out / name, ("png",))
+    figs = [("timeline", lambda: plots.fig_timeline(res, trial.id)), ("leg_motion", lambda: plots.fig_stick_strip(res)),
+            ("kinematics", lambda: plots.fig_kinematics(res)), ("knee_load", lambda: plots.fig_knee_load(res))]
+    if any(c.startswith("front_") for c in res.timeseries.columns):
+        figs.append(("front_view", lambda: plots.fig_front(res)))
+    skipped = []
+    for name, make in figs:
+        try:
+            files += plots.save(make(), out / name, ("png",))
+        except (KeyError, ValueError):   # figure needs data this trial does not have (e.g. front-only trial)
+            skipped.append(name)
+    if skipped:
+        (out / "figures_skipped.txt").write_text("Not produced (data not available for this trial): " + ", ".join(skipped))
     side = video_by_role(trial, "side") or video_by_role(trial, "front")
     if annotated_video and side is not None:
         hit = pipeline.load_cached(Path(project.root) / "cache", side.path,

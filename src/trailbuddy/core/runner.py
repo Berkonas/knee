@@ -245,8 +245,7 @@ def run_pair(project, trial, settings: AnalysisSettings, proc: dict | None = Non
         from .metrics import MetricValue
         res.metrics = [MetricValue(m.key, None, "unavailable", "Needs a side-view recording (sagittal measure).")
                        for m in res.metrics]
-        keep = ["time_s"]
-        res.timeseries = res.timeseries[keep]
+        res.timeseries = res.timeseries[[c for c in ("time_s", "frame_index") if c in res.timeseries]].copy()
         res.notes.append("Front view only: sagittal angles, timing and kinetics need the side view and are not "
                          "reported. Front-view (frontal-plane) measures are below.")
     if front_data:

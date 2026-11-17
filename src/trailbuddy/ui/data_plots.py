@@ -7,9 +7,8 @@ from __future__ import annotations
 import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QVBoxLayout, QWidget
 
-from .components import Segmented
 from .theme import tok
 
 PEN = ["#1F77B4", "#D55E00", "#009E73", "#CC79A7", "#E69F00", "#56B4E9"]
@@ -41,12 +40,15 @@ class DataPlots(QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(6)
         head = QHBoxLayout()
-        self.group = Segmented(list(GROUPS))
-        self.group.changed.connect(lambda _: self.redraw())
+        self.group = QComboBox()       # a menu scales to any window width (segmented buttons got squashed)
+        self.group.addItems(list(GROUPS))
+        self.group.setToolTip("Which measurements to plot")
+        self.group.currentIndexChanged.connect(lambda _: self.redraw())
         head.addWidget(self.group)
         head.addStretch(1)
         self.readout = QLabel("")
         self.readout.setObjectName("muted")
+        self.readout.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)  # elide, never squeeze
         head.addWidget(self.readout)
         self.btn_png = QPushButton("Save PNG…")
         self.btn_png.setToolTip("Export this plot at publication resolution")
@@ -57,7 +59,7 @@ class DataPlots(QWidget):
         self.pw.setMenuEnabled(False)
         self.pw.showGrid(x=True, y=True, alpha=0.15)
         self.pw.setLabel("bottom", "Time", units="s")
-        self.legend = self.pw.addLegend(offset=(-10, 6), labelTextSize="9pt")
+        self.legend = self.pw.addLegend(offset=(-10, 6), labelTextSize="9pt", brush=pg.mkBrush(255, 255, 255, 200))
         lay.addWidget(self.pw, 1)
         self.cursor = pg.InfiniteLine(angle=90, movable=True, pen=pg.mkPen("#B3261E", width=1.5))
         self.cursor.sigPositionChanged.connect(lambda ln: self._cursor_moved(ln.value()))
@@ -74,12 +76,17 @@ class DataPlots(QWidget):
         self.legend.clear()
         self.pw.addItem(self.cursor)
         self.pw.getViewBox().setBackgroundColor(tok("surface"))
+        from PySide6.QtGui import QColor
+        c = QColor(tok("surface"))
+        c.setAlpha(215)
+        self.legend.setBrush(pg.mkBrush(c))
+        self.legend.setLabelTextColor(tok("ink"))
         if self.res is None:
             self.readout.setText("Run the analysis to see time series here.")
             return
         ts, s = self.res.timeseries, self.res.side
         t = ts["time_s"].to_numpy()
-        name = list(GROUPS)[self.group.index()]
+        name = list(GROUPS)[self.group.currentIndex()]
         # events: stance of the analysed foot (shaded) and pole plants (thin bars at the bottom)
         st = ts.get(f"{s}_stance")
         if st is not None:

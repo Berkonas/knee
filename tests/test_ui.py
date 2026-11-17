@@ -116,8 +116,8 @@ def test_workspace_open_sync_analyse_export(win, study, qtbot, tmp_path, no_dial
     assert ws.video.t == pytest.approx(1.2)
     assert ws.plots.cursor.value() == pytest.approx(1.2)
     assert ws.inspector.live.rowCount() > 5
-    for i in range(len(ws.plots.group.buttons)):
-        ws.plots.group.set_index(i)
+    for i in range(ws.plots.group.count()):
+        ws.plots.group.setCurrentIndex(i)
     # visual clap needs poses in both views (patched cache provides them)
     ws.sync_visual()
     # exports (annotated video skipped: no real cache)

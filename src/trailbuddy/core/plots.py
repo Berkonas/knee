@@ -438,3 +438,18 @@ def fig_repetition(long: pd.DataFrame, metric: str) -> Figure:
     ax.set_title("Change across repetitions (drift can reflect fatigue, learning or pacing)")
     ax.legend(frameon=False, ncols=2, fontsize=7)
     return fig
+
+
+def fig_front(res) -> Figure:
+    """Front-view (frontal-plane) angles over time."""
+    ts = res.timeseries
+    fig, ax = _fig(7.2, 3.0)
+    for i, (c, lab) in enumerate((("front_left_knee_fppa_deg", "Left knee FPPA"), ("front_right_knee_fppa_deg", "Right knee FPPA"),
+                                  ("front_trunk_lateral_lean_deg", "Trunk lateral lean"), ("front_pelvic_obliquity_deg", "Pelvic tilt"))):
+        if c in ts:
+            ax.plot(ts.time_s, ts[c], color=PALETTE[i], label=lab)
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Angle (deg, 2D front view)")
+    ax.set_title("Front-view (frontal-plane) angles")
+    ax.legend(frameon=False, ncols=2)
+    return fig

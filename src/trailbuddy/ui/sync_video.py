@@ -246,7 +246,8 @@ class SyncVideoPanel(QWidget):
         bar.addWidget(self.slider, 1)
         self.time_label = QLabel("–")
         self.time_label.setObjectName("muted")
-        self.time_label.setMinimumWidth(190)
+        self.time_label.setMinimumWidth(130)
+        self.slider.setMinimumWidth(140)
         bar.addWidget(self.time_label)
         lay.addLayout(bar)
         tog = QHBoxLayout()
@@ -337,8 +338,9 @@ class SyncVideoPanel(QWidget):
             self.slider.setValue(int(1000 * t / self.t_max))
             self.slider.blockSignals(False)
         f = int(round(t * self.fps()))
-        self.time_label.setText(f"{t:6.3f} s · frame {f}" + (f" · front {self.view_time('front'):.3f} s"
-                                                             if len(self.sources) == 2 else ""))
+        self.time_label.setText(f"{t:.3f} s · frame {f}")
+        self.time_label.setToolTip(f"Side-camera clock {t:.3f} s (frame {f})" + (
+            f"\nFront-camera clock {self.view_time('front'):.3f} s" if len(self.sources) == 2 else ""))
         self.timeChanged.emit(t)
 
     def step(self, n: int):

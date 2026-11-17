@@ -188,15 +188,14 @@ def track_poles(video: str, pose: PoseSeries, frame0: int = 0, colour: PoleColou
             for side in ("left", "right"):
                 found[side] = detect_in_frame(frame, xy[idx(side, "wrist")], body_h, excl, colour, prev_ang[side], mask)
             # one shaft cannot belong to both hands: if both hands picked the same line, keep it for the hand
-            # with the higher confidence and search again for the other hand with that shaft masked out
+            # with the higher confidence and leave the other hand empty for that frame
             a, b = found["left"], found["right"]
             if a is not None and b is not None and np.linalg.norm(a[0] - b[0]) < 0.05 * body_h \
                     and abs(a[1] - b[1]) < 5:
                 keep, redo = ("left", "right") if a[3] >= b[3] else ("right", "left")
-                m2 = mask.copy()
-                cv2.line(m2, tuple(xy[idx(keep, "wrist")].astype(int)), tuple(found[keep][0].astype(int)), 0,
-                         max(8, int(0.03 * body_h)))
-                found[redo] = detect_in_frame(frame, xy[idx(redo, "wrist")], body_h, excl, colour, prev_ang[redo], m2)
+                # the other hand's pole is usually hidden behind this one in a side view: report it as missing
+                # (re-searching with the shaft masked out picked wrong lines in validation)
+                found[redo] = None
             for side in ("left", "right"):
                 res = found[side]
                 if res is not None and res[3] >= min_conf:

@@ -286,7 +286,7 @@ class WorkspacePage(QWidget):
         self.hsplit = QSplitter(Qt.Orientation.Horizontal)
         self.hsplit.setChildrenCollapsible(True)
         self.browser = ExperimentBrowser(state)
-        self.browser.setMinimumWidth(220)
+        self.browser.setMinimumWidth(190)
         self.hsplit.addWidget(self.browser)
         center = QWidget()
         center.setObjectName("workspaceCenter")
@@ -316,7 +316,7 @@ class WorkspacePage(QWidget):
         self.inspector = Inspector(self)
         self.inspector.setObjectName("inspector")
         self.inspector.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.inspector.setMinimumWidth(320)
+        self.inspector.setMinimumWidth(300)
         self.hsplit.addWidget(self.inspector)
         self.hsplit.setSizes([240, 860, 400])
         self.hsplit.setStretchFactor(1, 1)
@@ -536,6 +536,9 @@ class WorkspacePage(QWidget):
         if b > a:
             self.trial.interval = [a, b]
             self.state.save()
+            self.inspector.msg.setText(f"Interval {a:.2f}–{b:.2f} s. Re-analyse to apply it.")
+        else:
+            self.inspector.msg.setText("The end of the interval must be after the start; interval not changed.")
 
     def _common_window(self):
         v = self.video
