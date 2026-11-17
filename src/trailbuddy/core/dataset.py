@@ -90,7 +90,7 @@ def read_metadata(path: str | Path) -> Recording:
 
 
 def scan_folder(folder: str | Path) -> list[Recording]:
-    folder = Path(folder)
+    folder = Path(folder).resolve()  # recordings are stored with absolute paths
     if not folder.is_dir():
         raise VideoError(f"Not a folder: {folder}")
     files = sorted(p for p in folder.iterdir() if p.suffix.lower() in VIDEO_EXT and not p.name.startswith("."))

@@ -197,12 +197,28 @@ class Project:
         trials = []
         for t in d.get("trials", []):
             t = dict(t)
-            t["videos"] = [CameraVideo(**v) for v in t.get("videos", [])]
+            t["videos"] = [CameraVideo(**{**v, "path": resolve_video_path(v["path"], path.parent)})
+                           for v in t.get("videos", [])]
             trials.append(Trial(**t))
         return cls(name=d["name"], experiment=d.get("experiment", "exp1"),
                    conditions=[Condition(**c) for c in d.get("conditions", [])],
                    participants=[Participant(**p) for p in d.get("participants", [])],
                    trials=trials, root=path.parent)
+
+
+def resolve_video_path(stored: str, project_root: Path) -> str:
+    """Absolute path for a stored video path. Relative paths are looked up next to the study folder and then in
+    each of its parent folders, so a study opens the same way from a packaged app (whose working folder is not
+    the repository) as from a source checkout."""
+    p = Path(stored)
+    if p.is_absolute():
+        return str(p)
+    for base in (project_root, *project_root.parents):
+        if (base / p).exists():
+            return str((base / p).resolve())
+    if p.exists():  # relative to the current folder (old behaviour)
+        return str(p.resolve())
+    return stored
 
 
 def parse_filename(name: str) -> tuple[str, str, int] | None:

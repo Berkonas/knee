@@ -53,10 +53,12 @@ def main(argv: list[str] | None = None) -> int:
     sys.excepthook = lambda *exc: logging.getLogger("trailbuddy").error("Unhandled exception", exc_info=exc)
     if "--selftest" in argv:  # used by CI / packaging smoke tests
         from PySide6.QtCore import QTimer
+        if "--open-trial" in argv:  # e.g. check that a study's videos and results load in a packaged build
+            QTimer.singleShot(300, lambda: win.pages["workspace"].open_trial(argv[argv.index("--open-trial") + 1]))
         if "--screenshot" in argv:  # save what the window shows, to check a packaged build renders correctly
             shot = argv[argv.index("--screenshot") + 1]
-            QTimer.singleShot(1400, lambda: win.grab().save(shot))
-        QTimer.singleShot(1500, app.quit)
+            QTimer.singleShot(4400, lambda: win.grab().save(shot))
+        QTimer.singleShot(4500, app.quit)
     return app.exec()
 
 

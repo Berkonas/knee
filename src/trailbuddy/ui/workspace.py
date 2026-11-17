@@ -476,8 +476,8 @@ class WorkspacePage(QWidget):
                                   + (f"\n\nNote: {m.note}" if m.note else "") + f"\nView: {m.view}")
                 if c_i == 2:
                     bg, fg = EVIDENCE_COLORS[m.kind]
-                    it.setBackground(QColor(bg))
-                    it.setForeground(QColor(fg))
+                    dark = ins.summary.palette().base().color().lightness() < 128
+                    it.setForeground(QColor(bg if dark else fg))  # coloured text only: readable in both themes
                 ins.summary.setItem(r, c_i, it)
         q = self.res.quality
         parts = [f"Side: person in {100 * q.get('detection_rate', 0):.0f}% of frames, "
