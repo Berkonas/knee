@@ -234,17 +234,18 @@ INFO: dict[str, MetricInfo] = {
 
 # Report grouping (order matters: shown top to bottom).
 CATEGORIES: dict[str, list[str]] = {
-    "Knee load": ["quad_force_peak", "quad_force_peak_bw", "knee_ext_moment_peak", "knee_ext_impulse_total",
-                  "knee_ext_impulse_per_step", "knee_ext_impulse_per_m", "knee_neg_work", "knee_power_absorption_peak",
-                  "tibiofemoral_compression"],
-    "Knee and leg movement": ["knee_flexion_peak", "knee_flexion_at_contact", "knee_flexion_velocity_peak",
-                              "knee_flexion_rom", "hip_flexion_peak", "ankle_dorsiflexion_peak"],
-    "Trunk, arms and poles": ["trunk_lean_mean", "shoulder_flexion_peak", "elbow_flexion_mean", "elbow_moment_peak",
-                              "shoulder_moment_peak", "pole_support_fraction", "pole_contact_time",
-                              "pole_angle_at_contact", "pole_plant_timing"],
-    "Pace and rhythm": ["speed", "cadence", "step_time_mean", "step_time_cv", "stance_time_mean"],
-    "Front view (frontal plane)": ["front_knee_fppa_peak", "front_trunk_lateral_lean_rom", "front_pelvic_obliquity_rom",
-                                   "front_step_width_ratio_mean", "front_pole_tip_spread_mean"],
+    "Joint kinematics": ["knee_flexion_peak", "knee_flexion_at_contact", "knee_flexion_velocity_peak",
+                         "knee_flexion_rom", "hip_flexion_peak", "ankle_dorsiflexion_peak", "trunk_lean_mean",
+                         "shoulder_flexion_peak", "elbow_flexion_mean", "front_knee_fppa_peak",
+                         "front_trunk_lateral_lean_rom", "front_pelvic_obliquity_rom"],
+    "Movement and timing": ["speed", "cadence", "step_time_mean", "step_time_cv", "stance_time_mean",
+                            "front_step_width_ratio_mean"],
+    "Pole mechanics": ["pole_angle_at_contact", "pole_contact_time", "pole_plant_timing", "front_pole_tip_spread_mean",
+                       "pole_support_fraction"],
+    "Estimated loading": ["knee_ext_moment_peak", "quad_force_peak", "quad_force_peak_bw", "knee_ext_impulse_total",
+                          "knee_ext_impulse_per_step", "knee_ext_impulse_per_m", "knee_neg_work",
+                          "knee_power_absorption_peak", "elbow_moment_peak", "shoulder_moment_peak",
+                          "tibiofemoral_compression"],
 }
 
 

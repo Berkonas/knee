@@ -80,6 +80,7 @@ QLabel#bigValue {{ font-size: 22px; font-weight: 600; }}
 QLabel#chip {{ background: {t['accent_soft']}; border-radius: 9px; padding: 2px 9px; font-size: 11px; }}
 QLabel#chipWarn {{ background: #F7E9D2; color: #7A4A08; border-radius: 9px; padding: 2px 9px; font-size: 11px; }}
 QFrame#card, QFrame#panel {{ background: {t['surface']}; border: 1px solid {t['line']}; border-radius: 10px; }}
+QLabel#videoCaption {{ color: #C9D4D1; background: {t['video_bg']}; font-size: 11px; border-top-left-radius: 10px; border-top-right-radius: 10px; }}
 QFrame#videoCard {{ background: {t['video_bg']}; border: 1px solid {t['line']}; border-radius: 10px; }}
 QPushButton {{ background: {t['surface']}; border: 1px solid {t['line_strong']}; border-radius: 6px; padding: 5px 12px; min-height: 18px; }}
 QPushButton:hover {{ border-color: {t['accent']}; }}

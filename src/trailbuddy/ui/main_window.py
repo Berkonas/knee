@@ -49,7 +49,7 @@ class MainWindow(QMainWindow):
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         tb.addWidget(spacer)
         self.mode = Segmented([m for m, _ in MODES])
-        self.mode.changed.connect(self.stack.setCurrentIndex)
+        self.mode.changed.connect(self._switch_mode)
         tb.addWidget(self.mode)
         spacer2 = QWidget()
         spacer2.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
@@ -61,6 +61,7 @@ class MainWindow(QMainWindow):
         self.state.projectChanged.connect(self._project_changed)
         self.state.openTrial.connect(self._open_trial)
         self.pages["workspace"].browser.importRequested.connect(self.import_recordings)
+        self._reduce_motion = self.reduce_motion()
         self._menus()
         self.statusBar().showMessage("Ready. Open or create a study, then import recordings.")
 
@@ -99,6 +100,10 @@ class MainWindow(QMainWindow):
             a.triggered.connect(lambda _=False, val=val: self.set_appearance(val))
             grp.addAction(a)
             ap.addAction(a)
+        rm = QAction("Reduce motion", self, checkable=True)
+        rm.setChecked(self._reduce_motion)
+        rm.toggled.connect(lambda on: (setattr(self, "_reduce_motion", on), self.state.settings.setValue("reduce_motion", on)))
+        v.addAction(rm)
         pb = mb.addMenu("&Playback")
         ws = self.pages["workspace"]
         for text, key, fn in (("Play / pause", "Space", ws.video.toggle_play),
@@ -115,6 +120,41 @@ class MainWindow(QMainWindow):
         a = QAction(f"About {APP_NAME}", self)
         a.triggered.connect(self._about)
         h.addAction(a)
+
+    def reduce_motion(self) -> bool:
+        """User setting, or the operating system's Reduce Motion preference (macOS)."""
+        v = self.state.settings.value("reduce_motion", None)
+        if v is not None:
+            return str(v).lower() in ("true", "1")
+        import subprocess
+        import sys
+        if sys.platform == "darwin":
+            try:
+                r = subprocess.run(["defaults", "read", "com.apple.universalaccess", "reduceMotion"],
+                                   capture_output=True, text=True, timeout=2)
+                return r.stdout.strip() == "1"
+            except Exception:
+                return False
+        return False
+
+    def _switch_mode(self, i: int):
+        """Short cross-fade into the new page (160 ms); instant when reduced motion is preferred."""
+        self.stack.setCurrentIndex(i)
+        if self._reduce_motion:
+            return
+        from PySide6.QtCore import QEasingCurve, QPropertyAnimation
+        from PySide6.QtWidgets import QGraphicsOpacityEffect
+        w = self.stack.currentWidget()
+        eff = QGraphicsOpacityEffect(w)
+        w.setGraphicsEffect(eff)
+        anim = QPropertyAnimation(eff, b"opacity", w)
+        anim.setDuration(160)
+        anim.setStartValue(0.0)
+        anim.setEndValue(1.0)
+        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        anim.finished.connect(lambda: w.setGraphicsEffect(None))  # remove: effects slow video painting
+        anim.start()
+        self._anim = anim
 
     def set_appearance(self, val):
         apply_theme(QApplication.instance(), val)

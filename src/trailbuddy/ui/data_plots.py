@@ -59,7 +59,9 @@ class DataPlots(QWidget):
         self.pw.setMenuEnabled(False)
         self.pw.showGrid(x=True, y=True, alpha=0.15)
         self.pw.setLabel("bottom", "Time", units="s")
-        self.legend = self.pw.addLegend(offset=(-10, 6), labelTextSize="9pt", brush=pg.mkBrush(255, 255, 255, 200))
+        self.legend_label = QLabel("")          # legend lives in its own row: it never covers the data
+        self.legend_label.setWordWrap(True)
+        lay.addWidget(self.legend_label)
         lay.addWidget(self.pw, 1)
         self.cursor = pg.InfiniteLine(angle=90, movable=True, pen=pg.mkPen("#B3261E", width=1.5))
         self.cursor.sigPositionChanged.connect(lambda ln: self._cursor_moved(ln.value()))
@@ -73,16 +75,12 @@ class DataPlots(QWidget):
 
     def redraw(self):
         self.pw.clear()
-        self.legend.clear()
         self.pw.addItem(self.cursor)
         self.pw.getViewBox().setBackgroundColor(tok("surface"))
-        from PySide6.QtGui import QColor
-        c = QColor(tok("surface"))
-        c.setAlpha(215)
-        self.legend.setBrush(pg.mkBrush(c))
-        self.legend.setLabelTextColor(tok("ink"))
+
         if self.res is None:
             self.readout.setText("Run the analysis to see time series here.")
+            self.legend_label.setText("")
             return
         ts, s = self.res.timeseries, self.res.side
         t = ts["time_s"].to_numpy()
@@ -98,12 +96,16 @@ class DataPlots(QWidget):
                 r.setZValue(-10)
                 self.pw.addItem(r)
         n = 0
+        entries = []
         for i, (col, label) in enumerate(GROUPS[name]):
             c = col.format(s=s)
             if c in ts and np.isfinite(ts[c].to_numpy(dtype=float)).any():
-                self.pw.plot(t, ts[c].to_numpy(dtype=float), pen=pg.mkPen(PEN[i % len(PEN)], width=2), name=label,
+                self.pw.plot(t, ts[c].to_numpy(dtype=float), pen=pg.mkPen(PEN[i % len(PEN)], width=2),
                              connect="finite")
+                entries.append(f'<span style="color:{PEN[i % len(PEN)]}">━━</span> {label}')
                 n += 1
+        self.legend_label.setText("&nbsp;&nbsp;&nbsp;".join(entries) + (
+            '&nbsp;&nbsp;&nbsp;<span style="color:#7FB3AA">▮</span> stance' if st is not None else ""))
         self.pw.setLabel("left", UNITS[name])
         self.readout.setText("" if n else f"No {name.lower()} data for this trial.")
         self.pw.enableAutoRange()

@@ -443,19 +443,29 @@ class WorkspacePage(QWidget):
     def _show_result(self):
         ins = self.inspector
         self.plots.set_result(self.res)
+        ins.summary.clearSpans()
         ins.summary.setRowCount(0)
         ins.quality.setText("")
         if self.res is None:
             return
         rows = []
         present = {m.key: m for m in self.res.metrics}
-        for _cat, keys in CATEGORIES.items():
-            for k in keys:
-                if k in present:
-                    rows.append(present[k])
+        for cat, keys in CATEGORIES.items():
+            ms = [present[k] for k in keys if k in present]
+            if ms:
+                rows.append(cat)
+                rows.extend(ms)
         ins.summary.setRowCount(len(rows))
-        from PySide6.QtGui import QColor
+        from PySide6.QtGui import QColor, QFont
         for r, m in enumerate(rows):
+            if isinstance(m, str):           # category header row
+                it = QTableWidgetItem(m)
+                f = QFont(it.font())
+                f.setBold(True)
+                it.setFont(f)
+                ins.summary.setItem(r, 0, it)
+                ins.summary.setSpan(r, 0, 1, 3)
+                continue
             info = INFO[m.key]
             val = "–" if m.value is None else f"{fmt(m.value)} {info.unit}"
             items = [info.label, val, SHORT_KINDS[m.kind]]

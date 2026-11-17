@@ -269,8 +269,7 @@ def run_pair(project, trial, settings: AnalysisSettings, proc: dict | None = Non
             from .metrics import MetricValue
             res.metrics.append(MetricValue(k, None, "unavailable", "No front-view recording for this trial.", view="front"))
     if not part.metrics_entered:
-        res.notes.insert(0, "Body mass/height are placeholder values: enter real body metrics before using any "
-                         "force or moment.")
+        block_unsupported_kinetics(res)
     res.quality["sync_offset_s"] = off if (side_data and front_data) else None
     res.quality["processing"] = {"pose": (proc or {}).get("backend", "rtmpose"), "mode": (proc or {}).get("mode", "balanced"),
                                  "stride": (proc or {}).get("stride", 1)}
@@ -283,3 +282,28 @@ def run_pair(project, trial, settings: AnalysisSettings, proc: dict | None = Non
     if progress:
         progress(1.0, "Done")
     return res
+
+
+KINETIC_COLUMN_TOKENS = ("moment", "force", "power", "impulse", "quad", "support", "grf")
+
+
+def block_unsupported_kinetics(res) -> None:
+    """Without the participant's real body mass and height, no force, moment, power, impulse or metric
+    distance may be reported: placeholder anthropometry would give numbers that look valid but are not.
+    Every such metric becomes 'unavailable' with the reason, and the corresponding time series are removed."""
+    from .metrics import MetricValue
+
+    why = "Needs this participant's measured body mass and height (Body metrics…)."
+    out = []
+    for m in res.metrics:
+        if m.kind in ("model", "scenario") or m.key in ("speed", "knee_ext_impulse_per_m"):
+            out.append(MetricValue(m.key, None, "unavailable", why, view=m.view))
+        else:
+            out.append(m)
+    res.metrics = out
+    drop = [c for c in res.timeseries.columns if any(tok in c for tok in KINETIC_COLUMN_TOKENS)]
+    res.timeseries = res.timeseries.drop(columns=drop)
+    res.sensitivity = res.sensitivity.iloc[0:0]
+    res.notes.insert(0, "Body mass and height not entered: forces, moments, power, impulse and speed are not "
+                     "reported. Angles, timing and pole kinematics do not depend on them.")
+    res.quality["kinetics_blocked"] = True

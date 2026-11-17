@@ -40,7 +40,7 @@ class VideoCanvas(QWidget):
         self.src_size = (1, 1)
         self.overlay = None   # dict with 'xy','vis','poles','trail','labels'
         self.message = "No recording"
-        self.show = {"skeleton": True, "poles": True, "trails": True, "labels": True}
+        self.show = {"skeleton": True, "poles": True, "trails": False, "labels": False}
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setMinimumSize(240, 160)
 
@@ -132,16 +132,6 @@ class VideoCanvas(QWidget):
                     p.drawRoundedRect(box, 4, 4)
                     p.setPen(QColor("white"))
                     p.drawText(q, text)
-        # title chip
-        f = QFont(self.font())
-        f.setPointSizeF(10)
-        p.setFont(f)
-        tw = p.fontMetrics().horizontalAdvance(self.title) + 14
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor(0, 0, 0, 140))
-        p.drawRoundedRect(QRectF(r.x() + 8, r.y() + 8, tw, 20), 6, 6)
-        p.setPen(QColor("white"))
-        p.drawText(QRectF(r.x() + 8, r.y() + 8, tw, 20), Qt.AlignmentFlag.AlignCenter, self.title)
         p.end()
 
 
@@ -212,6 +202,11 @@ class SyncVideoPanel(QWidget):
             fr.setObjectName("videoCard")
             fl = QVBoxLayout(fr)
             fl.setContentsMargins(0, 0, 0, 0)
+            fl.setSpacing(0)
+            cap = QLabel(f"  {c.title}")
+            cap.setObjectName("videoCaption")
+            cap.setFixedHeight(22)
+            fl.addWidget(cap)
             fl.addWidget(c)
             c.clicked.connect(lambda x, y, role=role: self.canvasClicked.emit(role, x, y))
             self.split.addWidget(fr)
@@ -255,7 +250,7 @@ class SyncVideoPanel(QWidget):
         self.toggles = {}
         for key, lab in (("skeleton", "Skeleton"), ("poles", "Poles"), ("trails", "Trajectories"), ("labels", "Angle labels")):
             cb = QCheckBox(lab)
-            cb.setChecked(True)
+            cb.setChecked(key in ("skeleton", "poles"))   # nothing but tracking lines on the video by default
             cb.toggled.connect(lambda on, key=key: self._toggle(key, on))
             tog.addWidget(cb)
             self.toggles[key] = cb

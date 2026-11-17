@@ -130,3 +130,36 @@ def test_drift_check_zero_for_shifted_copy():
     r, lag = dataset.envelope_ncc(a, b)
     d = sync.estimate_drift(a, b, 0.01, lag)
     assert d["drift_ms_per_min"] == pytest.approx(0, abs=1)
+
+
+def test_kinetics_blocked_without_body_metrics():
+    from trailbuddy.core import analysis
+    from trailbuddy.core.analysis import AnalysisSettings
+    from trailbuddy.core.runner import block_unsupported_kinetics
+    from trailbuddy.core.synthetic import synthetic_descent
+    p, tr = synthetic_descent(duration=3.0)
+    res = analysis.analyse(p, 70, 1.75, AnalysisSettings(side="right"))
+    assert res.metric("knee_ext_moment_peak").value is not None
+    block_unsupported_kinetics(res)
+    for k in ("knee_ext_moment_peak", "quad_force_peak", "knee_neg_work", "speed"):
+        assert res.metric(k).kind == "unavailable" and res.metric(k).value is None
+    assert res.metric("knee_flexion_peak").value is not None          # kinematics unaffected
+    assert not any("moment" in c or "force" in c for c in res.timeseries.columns)
+
+
+def test_moment_scales_linearly_with_body_mass():
+    """Physical consistency: quasi-static knee moment and quad force scale with mass; angles do not."""
+    from trailbuddy.core import analysis
+    from trailbuddy.core.analysis import AnalysisSettings
+    from trailbuddy.core.synthetic import synthetic_descent
+    p, tr = synthetic_descent(duration=3.0)
+    s = AnalysisSettings(side="right", scale_method="points", scale_m_per_px=tr.scale_m_per_px)
+    a = analysis.analyse(p, 60, 1.75, s)
+    b = analysis.analyse(p, 90, 1.75, s)
+    assert b.metric("quad_force_peak").value == pytest.approx(a.metric("quad_force_peak").value * 1.5, rel=1e-6)
+    assert b.metric("knee_ext_moment_peak").value == pytest.approx(a.metric("knee_ext_moment_peak").value, rel=1e-6)
+    assert b.metric("knee_flexion_peak").value == pytest.approx(a.metric("knee_flexion_peak").value)
+    # halving the calibrated scale (metres per pixel) halves the moment arm and so the moment
+    s2 = AnalysisSettings(side="right", scale_method="points", scale_m_per_px=tr.scale_m_per_px / 2)
+    c = analysis.analyse(p, 60, 1.75, s2)
+    assert c.metric("knee_ext_moment_peak").value == pytest.approx(a.metric("knee_ext_moment_peak").value / 2, rel=1e-6)
