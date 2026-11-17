@@ -30,3 +30,5 @@ videos/
 
 # Study folders (participant results) stay local
 studies/
+models/rtmpose/
+models/*.onnx
