@@ -124,8 +124,9 @@ class ResultsPage(QWidget):
         else:
             self.explain.setText({
                 "Overview": "Every metric at once: how far each condition moved each participant from baseline.",
-                "Trade-off": "Does knee unloading come with more shoulder demand? Each point is a participant's "
-                             "mean in one condition.",
+                "Trade-off": "Does knee unloading come with more shoulder demand? Each point is one participant's "
+                             "change from the baseline (mean of repetitions, bars = repetition SD). Scenario loads "
+                             "depend on the assumed pole force.",
                 "Stance curves": "Knee extensor moment over the stance phase (0 % = foot lands, 100 % = foot "
                                  "leaves), mean ± SD of all stances per condition.",
             }[view])
@@ -139,6 +140,10 @@ class ResultsPage(QWidget):
             self.t_changes.setRowCount(0)
             return
         base = self.baseline.currentData() or "C0"
+        unset = sorted(set(self.long["condition"]) - {c.code for c in p.conditions if c.code != "UNSET"})
+        if unset:
+            self.explain.setText(self.explain.text() + f"  Note: {len(self.long[self.long.condition.isin(unset)].trial_id.unique())} "
+                                 "trial(s) have no condition assigned and cannot be compared.")
         conds = [c.code for c in p.conditions]
         ch = compare.change_table(self.long, base, list(dict.fromkeys(compare.OVERVIEW_METRICS + [m])))
         if view == "Overview":
@@ -151,7 +156,7 @@ class ResultsPage(QWidget):
         elif view == "Repetitions":
             fig = plots.fig_repetition(self.long, m)
         elif view == "Trade-off":
-            fig = plots.fig_tradeoff(self.long)
+            fig = plots.fig_tradeoff_paired(self.long, base)
         else:
             fig = self._curves(p)
         self.canvas.set_figure(fig)

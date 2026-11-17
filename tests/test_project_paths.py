@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from trailbuddy.core.project import Project, resolve_video_path
+from trailbuddy.core.project import CameraVideo, Project, resolve_video_path
 
 
 def test_relative_video_path_resolves_from_study_parents(tmp_path, monkeypatch):
@@ -88,3 +88,19 @@ def test_clear_cache_only_for_selected_trials(tmp_path):
         (c / n).write_text("x")
     assert pr.clear_cache(["P01_C1_T01"]) == 2 and (c / "B.bal.pose.csv").exists()
     assert pr.clear_cache() == 1
+
+
+def test_study_quality_checks(tmp_path):
+    from trailbuddy.core.project import Participant, Trial
+    from trailbuddy.core.quality import study_checks, trial_checks
+    pr = Project.new(tmp_path / "q", "q", "exp1")
+    pr.add_participant(Participant("P01", 70, 1.75))
+    pr.participants.append(Participant("P02"))
+    from trailbuddy.core.project import Condition
+    pr.add_condition(Condition("UNSET", "Condition not yet assigned", False))
+    pr.add_trial(Trial("P02", "UNSET", 1, [CameraVideo("/nope/a.mov", "side")], sync={"pair_status": "review"}))
+    msgs = " | ".join(m for _, m in study_checks(pr))
+    assert "P02: body mass and height not entered" in msgs and "no condition assigned" in msgs
+    assert "pairing to review" in msgs and "videos not found" in msgs
+    levels = dict((m, lev) for lev, m in trial_checks(pr, pr.trials[0]))
+    assert levels["video file not found"] == "error" and "not analysed" in levels

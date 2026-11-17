@@ -238,7 +238,10 @@ class ProjectPage(QWidget):
         self.btn_demo = QPushButton("Create demo study")
         self.btn_demo.setToolTip("Builds a study of 18 synthetic trials (no real people) so you can explore results and exports.")
         self.btn_demo.clicked.connect(self.make_demo)
-        for b in (self.btn_new, self.btn_open, self.btn_demo):
+        self.btn_delstudy = QPushButton("Delete study…")
+        self.btn_delstudy.setToolTip("Moves this study folder (trials, results, caches) to the system trash")
+        self.btn_delstudy.clicked.connect(self.delete_study)
+        for b in (self.btn_new, self.btn_open, self.btn_demo, self.btn_delstudy):
             row.addWidget(b)
         row.addStretch(1)
         self.info = QLabel("No study open.")
@@ -246,6 +249,12 @@ class ProjectPage(QWidget):
         row.addWidget(self.info)
         lay.addLayout(row)
 
+        self.quality = QLabel("")
+        self.quality.setObjectName("warnBanner")
+        self.quality.setWordWrap(True)
+        self.quality.setTextFormat(Qt.TextFormat.RichText)
+        self.quality.hide()
+        lay.addWidget(self.quality)
         split = QSplitter(Qt.Orientation.Vertical)
         top = QWidget(); tl = QHBoxLayout(top); tl.setContentsMargins(0, 0, 0, 0)
         # participants
@@ -278,7 +287,7 @@ class ProjectPage(QWidget):
         # trials
         trw = QWidget(); trl = QVBoxLayout(trw); trl.setContentsMargins(0, 0, 0, 0)
         trl.addWidget(section("Trials"))
-        self.ttable = table(["Trial", "Participant", "Condition", "#", "Pole (cm)", "Cameras", "Status", "Notes"])
+        self.ttable = table(["Trial", "Participant", "Condition", "#", "Task", "Views", "Status", "Checks", "Notes"])
         self.ttable.doubleClicked.connect(self.open_selected)
         trl.addWidget(self.ttable)
         r = QHBoxLayout()
@@ -315,12 +324,13 @@ class ProjectPage(QWidget):
         p = self.project
         has = p is not None
         for b in (self.btn_padd, self.btn_pedit, self.btn_pdel, self.btn_cadd, self.btn_cdel, self.btn_tadd,
-                  self.btn_tadd2, self.btn_tedit, self.btn_tdel, self.btn_topen):
+                  self.btn_tadd2, self.btn_tedit, self.btn_tdel, self.btn_topen, self.btn_delstudy):
             b.setEnabled(has)
         if not has:
             self.info.setText("No study open.")
             for t in (self.ptable, self.ctable, self.ttable):
                 t.setRowCount(0)
+            self.quality.hide()
             return
         self.info.setText(f"{p.name}  ·  {EXPERIMENTS.get(p.experiment, {}).get('name', p.experiment)}  ·  {p.root}")
         fill(self.ptable, [(q.id, q.body_mass_kg if q.body_mass_kg is not None else "missing",
@@ -329,8 +339,15 @@ class ProjectPage(QWidget):
                            for q in p.participants])
         fill(self.ctable, [(c.code, c.label, "yes" if c.uses_poles else "no",
                             "" if c.pole_offset_cm is None else f"{c.pole_offset_cm:+g}") for c in p.conditions])
-        fill(self.ttable, [(t.id, t.participant_id, t.condition_code, t.trial_number, t.pole_length_cm,
-                            len(t.videos), t.status, t.notes) for t in p.trials])
+        from ..core.quality import study_checks, trial_checks
+        fill(self.ttable, [(t.id, t.participant_id, t.condition_code, t.trial_number, TASKS.get(t.task, t.task),
+                            " + ".join(v.role for v in t.videos), t.status,
+                            "; ".join(m for lev, m in trial_checks(p, t) if lev != "info") or "ok", t.notes)
+                           for t in p.trials])
+        chk = study_checks(p)
+        icon = {"error": "⛔", "warn": "⚠", "info": "ℹ"}
+        self.quality.setText("<b>Before comparing conditions</b><br>" + "<br>".join(f"{icon[lev]} {m}" for lev, m in chk))
+        self.quality.setVisible(bool(chk))
         done = sum(t.status == "analysed" for t in p.trials)
         self.progress_label.setText(f"{done} analysed · {len(p.trials)} logged · {p.planned_trials()} planned")
 
@@ -515,11 +532,33 @@ class ProjectPage(QWidget):
         tid = self._selected(self.ttable)
         if not tid:
             return
-        if QMessageBox.question(self, "Remove trial", f"Remove {tid} from the study log?\n"
-                                "The original video and any result files on disk are kept.") \
-                == QMessageBox.StandardButton.Yes:
-            self.project.remove_trial(tid)
+        if QMessageBox.question(self, "Delete trial", f"Delete {tid}?\n\nThe trial and its results move to the "
+                                "study's trash and can be restored from the Analyse browser (right-click > Restore "
+                                "deleted trials). The original video is not touched.") == QMessageBox.StandardButton.Yes:
+            self.project.delete_trials([tid])
             self._changed()
+
+    def delete_study(self):
+        from PySide6.QtCore import QFile
+        p = self.project
+        if p is None:
+            return
+        inside = [v.path for t in p.trials for v in t.videos if Path(v.path).resolve().is_relative_to(p.root.resolve())]
+        msg = (f"Move the study folder\n{p.root}\nto the system trash?\n\nThis removes the study file, all trial "
+               "results, tracking caches and backups. Original videos outside the folder are not touched; you can "
+               "restore the folder from the trash.")
+        if inside:
+            msg += f"\n\nWarning: {len(inside)} video(s) are stored inside this folder and would move too."
+        if QMessageBox.question(self, "Delete study", msg) != QMessageBox.StandardButton.Yes:
+            return
+        root = str(p.root)
+        self.state.set_project(None)
+        self.state.settings.remove("last_project")
+        ok = QFile.moveToTrash(root)
+        if not ok:
+            error_box(self, "Could not move to trash", f"The folder was left in place:\n{root}")
+        else:
+            self.state.status.emit("Study moved to the trash.")
 
     def open_selected(self, *_):
         tid = self._selected(self.ttable)

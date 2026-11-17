@@ -207,3 +207,20 @@ def test_biomechanics_page_modes_fbd_and_recalculate(win, study, qtbot, no_dialo
     bp.seekRequested.connect(sig.append)
     bp.btn_video.click()
     assert sig and win.stack.currentIndex() == 1
+
+
+def test_delete_trial_to_trash_and_delete_study(win, study, monkeypatch):
+    from PySide6.QtCore import QFile
+    from PySide6.QtWidgets import QMessageBox
+    win.state.set_project(study)
+    pp = win.pages["project"]
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes)
+    pp.ttable.selectRow(0)
+    pp.remove_trial()
+    assert study.trials == [] and study.deleted_trials()
+    assert "Before comparing" not in pp.quality.text() or pp.quality.isVisibleTo(pp) is not None
+    moved = []
+    monkeypatch.setattr(QFile, "moveToTrash", lambda path: moved.append(path) or True)
+    root = str(study.root)
+    pp.delete_study()
+    assert moved == [root] and win.state.project is None

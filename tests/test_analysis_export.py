@@ -190,3 +190,19 @@ def test_exported_trial_csv_matches_result_and_timestamps(tmp_path, monkeypatch)
     np.testing.assert_allclose(sm.value.to_numpy(float), mem.value.to_numpy(float), rtol=1e-5, equal_nan=True)
     frames = ts.time_s.to_numpy() * 60.0
     np.testing.assert_allclose(frames, np.round(frames), atol=1e-6)   # every sample is an exact video frame
+
+
+def test_tradeoff_table_is_paired_within_participant():
+    from trailbuddy.core.plots import fig_tradeoff_paired, tradeoff_table
+    rows = []
+    for pid, k0, k1, s1 in (("P01", 1.5, 1.2, 0.2), ("P02", 1.0, 0.9, 0.1)):
+        for rep, d in enumerate((-0.05, 0.05)):
+            rows += [{"participant": pid, "condition": "C0", "trial_id": f"{pid}_C0_{rep}", "metric": "knee_ext_moment_peak", "value": k0 + d},
+                     {"participant": pid, "condition": "C1", "trial_id": f"{pid}_C1_{rep}", "metric": "knee_ext_moment_peak", "value": k1 + d},
+                     {"participant": pid, "condition": "C1", "trial_id": f"{pid}_C1_{rep}", "metric": "shoulder_moment_peak_per_kg", "value": s1 + d}]
+    tt = tradeoff_table(pd.DataFrame(rows), "C0").set_index("participant")
+    assert tt.loc["P01", "knee_pct"] == pytest.approx(-20.0)
+    assert tt.loc["P02", "knee_pct"] == pytest.approx(-10.0)
+    assert tt.loc["P01", "arm_delta"] == pytest.approx(0.2)  # no-pole baseline counts as zero arm moment
+    assert tt.loc["P01", "n"] == 2 and np.isfinite(tt.loc["P01", "knee_pct_sd"])
+    fig_tradeoff_paired(pd.DataFrame(rows), "C0")

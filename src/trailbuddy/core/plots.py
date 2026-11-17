@@ -196,6 +196,55 @@ def fig_tradeoff(long: pd.DataFrame, knee_metric: str = "quad_force_peak",
     return fig
 
 
+def tradeoff_table(long: pd.DataFrame, baseline: str = "C0", knee_metric: str = "knee_ext_moment_peak",
+                   arm_metric: str = "shoulder_moment_peak_per_kg") -> pd.DataFrame:
+    """Paired within-participant changes from the baseline condition: knee demand (%) vs arm demand (N·m/kg).
+
+    A no-pole baseline has no pole-induced arm moment, so its arm value is taken as 0. Repetition SDs give the
+    error bars. Rows: participant, condition, knee_pct, knee_pct_sd, arm_delta, arm_sd, n."""
+    rows = []
+    for pid, g in long.groupby("participant"):
+        kb = g[(g.metric == knee_metric) & (g.condition == baseline)]["value"].dropna()
+        if kb.empty or kb.mean() == 0:
+            continue
+        ab = g[(g.metric == arm_metric) & (g.condition == baseline)]["value"].dropna()
+        ab_m = ab.mean() if len(ab) else 0.0
+        for cond, gc in g[g.condition != baseline].groupby("condition"):
+            k = gc[gc.metric == knee_metric]["value"].dropna()
+            a = gc[gc.metric == arm_metric]["value"].dropna()
+            if k.empty:
+                continue
+            rows.append({"participant": pid, "condition": cond, "knee_pct": 100 * (k.mean() - kb.mean()) / kb.mean(),
+                         "knee_pct_sd": 100 * k.std(ddof=1) / kb.mean() if len(k) > 1 else np.nan,
+                         "arm_delta": (a.mean() if len(a) else 0.0) - ab_m,
+                         "arm_sd": a.std(ddof=1) if len(a) > 1 else np.nan, "n": len(k)})
+    return pd.DataFrame(rows, columns=["participant", "condition", "knee_pct", "knee_pct_sd", "arm_delta", "arm_sd", "n"])
+
+
+def fig_tradeoff_paired(long: pd.DataFrame, baseline: str = "C0") -> Figure:
+    fig, ax = _fig(5.6, 3.8)
+    tt = tradeoff_table(long, baseline)
+    ax.axhline(0, color="#9AA5A3", lw=0.8)
+    ax.axvline(0, color="#9AA5A3", lw=0.8)
+    if tt.empty:
+        ax.text(0.5, 0.5, f"Needs knee moments (mode B or C) for the baseline {baseline}\nand at least one other "
+                "condition per participant.", ha="center", va="center", transform=ax.transAxes)
+        ax.set_axis_off()
+        return fig
+    for i, (code, g) in enumerate(tt.groupby("condition")):
+        ax.errorbar(g.arm_delta, g.knee_pct, xerr=g.arm_sd, yerr=g.knee_pct_sd, fmt="o", ms=6, capsize=2,
+                    color=cond_color(code, i), label=code)
+        for r in g.itertuples():
+            ax.annotate(r.participant, (r.arm_delta, r.knee_pct), fontsize=7, xytext=(4, 3), textcoords="offset points")
+    ax.text(0.98, 0.03, "knee demand lower,\nshoulder demand higher", transform=ax.transAxes, ha="right", va="bottom",
+            fontsize=7, color="#5E6E6B")
+    ax.set_xlabel(f"Change in peak shoulder moment vs {baseline} (N·m/kg)")
+    ax.set_ylabel(f"Change in peak knee extensor moment vs {baseline} (%)")
+    ax.set_title("Knee vs shoulder trade-off (paired, within participant)")
+    ax.legend(frameon=False, title="Condition", fontsize=7)
+    return fig
+
+
 def fig_sensitivity(res) -> Figure:
     fig, ax = _fig(5.0, 3.0)
     s = res.sensitivity

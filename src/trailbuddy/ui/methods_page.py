@@ -1,37 +1,33 @@
-"""Methods page: how each number is produced and what it can and cannot support."""
+"""Methods: a compact reference. Evidence labels, analysis modes, the core equations, and a searchable
+metric list; the full derivations live in RESEARCH_PIPELINE.md and docs/calculation-audit.md."""
 
 from __future__ import annotations
 
-from PySide6.QtWidgets import QTextBrowser, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (QHBoxLayout, QHeaderView, QLabel, QLineEdit, QSplitter, QTableWidget, QTableWidgetItem,
+                               QTextBrowser, QVBoxLayout, QWidget)
 
 from ..core.metrics import INFO, KINDS
 from .theme import EVIDENCE_COLORS
 from .widgets import page_header
 
-INTRO = """
-<h3>Evidence labels</h3>
-<p>Every number in the app and in exports carries one of these labels:</p>
-<p>{badges}</p>
-<h3>Models in plain words</h3>
-<ul>
-<li><b>Joint angles</b> come from MediaPipe Pose landmarks, filtered with a 6&nbsp;Hz zero-lag Butterworth filter.
-They are 2D projections onto the image plane: accurate only when the camera faces the side of the motion.</li>
-<li><b>Foot and pole contacts</b> are found where the foot (or pole tip) stops moving. Check them on the video.</li>
-<li><b>Knee extensor moment without a force plate</b> uses a quasi-static model: the foot carries body weight
-(minus any pole support), acting straight up through an assumed point on the foot.
-M<sub>knee</sub> = F<sub>foot</sub> × horizontal distance from that point to the knee. Impact peaks and horizontal
-forces are not captured, so these are <i>scenario</i> estimates for comparing conditions.</li>
-<li><b>With a force plate</b>, 2D Newton–Euler inverse dynamics (foot → shank → thigh) with Winter (2009)
-segment parameters gives ankle, knee and hip moments.</li>
-<li><b>Quadriceps force</b> = knee extensor moment ÷ patellar tendon moment arm (nominal 5&nbsp;cm, range 4–6&nbsp;cm
-from in vivo and cadaver studies). Co-contraction is ignored.</li>
-<li><b>Arm moments</b> treat the pole as pushing along its own axis on the hand. Pole force must be measured or
-assumed; it cannot be read from ordinary video.</li>
-<li><b>Mechanical demand</b>: knee extensor angular impulse (moment × time) and negative knee work. These describe
-mechanical loading. They are not fatigue, pain or injury risk.</li>
-</ul>
-<p>Full equations, assumptions and references: <code>docs/methods.md</code> in the project repository.</p>
-<h3>Metric reference</h3>
+SUMMARY = """
+<p><b>Evidence labels.</b> {badges}</p>
+<p><b>Analysis modes.</b> <b>A</b> video-only kinematics: angles, timing, pole geometry, no forces.
+<b>B</b> scenario: loads from stated assumptions (body weight, support share, COP, pole force).
+<b>C</b> measured: loads from imported force-plate, insole or pole load-cell data.</p>
+<table cellspacing="0" cellpadding="4">
+<tr><td><b>Support</b></td><td>F<sub>feet</sub> + Σ F<sub>pole</sub>·cos θ<sub>pole</sub> ≈ m·g (static) or m·(g + a<sub>COM</sub>)</td></tr>
+<tr><td><b>Knee moment</b></td><td>M<sub>knee</sub> = (x<sub>knee</sub> − x<sub>COP</sub>)·F<sub>y</sub> + (y<sub>COP</sub> − y<sub>knee</sub>)·F<sub>x</sub>;
+force from the COP toward the body COM (vertical = upper bound)</td></tr>
+<tr><td><b>Quadriceps</b></td><td>F<sub>quad</sub> ≈ M<sub>knee</sub> / r, r = 5 cm (4–6 cm). Net-moment equivalent, not tendon or contact force</td></tr>
+<tr><td><b>Shoulder, elbow</b></td><td>M = (r<sub>grip</sub> − r<sub>joint</sub>) × F<sub>pole</sub> + arm-segment weight terms</td></tr>
+<tr><td><b>Power, work</b></td><td>P = M<sub>knee</sub>·ω<sub>ext</sub>; negative work = ∫ min(P, 0) dt; impulse = ∫ max(M, 0) dt</td></tr>
+<tr><td><b>Measured force</b></td><td>2D Newton–Euler: F<sub>p</sub> = m a − m g − F<sub>d</sub>; M<sub>p</sub> = Iα − M<sub>d</sub> − r<sub>p</sub>×F<sub>p</sub> − r<sub>d</sub>×F<sub>d</sub></td></tr>
+</table>
+<p><b>Never estimated from video:</b> tibiofemoral compression, shoulder contact force, fatigue, pain or injury risk.</p>
+<p style="color:#7A8582">Full equations, assumptions and references: RESEARCH_PIPELINE.md and docs/calculation-audit.md
+in the project folder.</p>
 """
 
 
@@ -41,15 +37,51 @@ class MethodsPage(QWidget):
         self.setObjectName("page")
         lay = QVBoxLayout(self)
         lay.setContentsMargins(24, 18, 24, 18)
-        lay.addWidget(page_header("Methods", "What each number means, how it is calculated, and its limits."))
+        lay.addWidget(page_header("Methods", "How each number is produced, and what it can and cannot support."))
+        split = QSplitter(Qt.Orientation.Vertical)
         tb = QTextBrowser()
         tb.setOpenExternalLinks(True)
         badges = " ".join(f'<span style="background:{EVIDENCE_COLORS[k][0]}; color:{EVIDENCE_COLORS[k][1]};">'
                           f'&nbsp;{v}&nbsp;</span>' for k, v in KINDS.items())
-        html = INTRO.format(badges=badges)
-        for i in INFO.values():
-            html += (f"<h4>{i.label} <span style='color:#5E6E6B'>({i.unit})</span></h4>"
-                     f"<p><b>What we measure:</b> {i.what}<br><b>Why it matters:</b> {i.why}<br>"
-                     f"<b>What we can conclude:</b> {i.conclude}<br><b>What we cannot conclude:</b> {i.not_conclude}</p>")
-        tb.setHtml(html)
-        lay.addWidget(tb, 1)
+        tb.setHtml(SUMMARY.format(badges=badges))
+        split.addWidget(tb)
+        ref = QWidget()
+        rv = QVBoxLayout(ref)
+        rv.setContentsMargins(0, 8, 0, 0)
+        row = QHBoxLayout()
+        cap = QLabel("Metric reference")
+        cap.setObjectName("cardTitle")
+        row.addWidget(cap)
+        row.addStretch(1)
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Search metrics")
+        self.search.setClearButtonEnabled(True)
+        self.search.setMaximumWidth(280)
+        self.search.textChanged.connect(self._filter)
+        row.addWidget(self.search)
+        rv.addLayout(row)
+        self.table = QTableWidget(len(INFO), 3)
+        self.table.setHorizontalHeaderLabels(["Metric", "Unit", "What it is"])
+        self.table.verticalHeader().setVisible(False)
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.setWordWrap(False)
+        hh = self.table.horizontalHeader()
+        hh.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        hh.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        hh.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        for r, i in enumerate(INFO.values()):
+            for c, txt in enumerate((i.label, i.unit, i.what)):
+                it = QTableWidgetItem(txt)
+                it.setToolTip(f"<b>{i.label}</b><br>{i.what}<br><b>Why:</b> {i.why}<br><b>Can conclude:</b> {i.conclude}"
+                              f"<br><b>Cannot conclude:</b> {i.not_conclude}")
+                self.table.setItem(r, c, it)
+        rv.addWidget(self.table, 1)
+        split.addWidget(ref)
+        split.setSizes([330, 420])
+        lay.addWidget(split, 1)
+
+    def _filter(self, text: str):
+        q = text.lower().strip()
+        for r in range(self.table.rowCount()):
+            hit = not q or any(q in (self.table.item(r, c).text().lower()) for c in range(3))
+            self.table.setRowHidden(r, not hit)
