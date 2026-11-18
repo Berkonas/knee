@@ -224,3 +224,21 @@ def test_delete_trial_to_trash_and_delete_study(win, study, monkeypatch):
     root = str(study.root)
     pp.delete_study()
     assert moved == [root] and win.state.project is None
+
+
+def test_foot_contact_overlay_follows_sync(win, study, qtbot, no_dialogs):
+    win.state.set_project(study)
+    ws = win.pages["workspace"]
+    ws.browser.select_trial("P01_C1_T01")
+    ws.run()
+    qtbot.waitUntil(lambda: ws.inspector.btn_run.isEnabled(), timeout=60000)
+    side = ws.video.sources["side"]
+    assert side.contacts and any(side.contacts.values())
+    a, b = next(iv for ivs in side.contacts.values() for iv in ivs)
+    ov = side.overlay_at(a + 0.05)
+    assert ov["contacts"] and ov["contacts"][0][2] < 0.25  # just after the strike: flashing
+    ws._apply_offset(0.5, "test")
+    front = ws.video.sources["front"]
+    fa = next(iv for ivs in front.contacts.values() for iv in ivs)[0]
+    assert fa == a - 0.5
+    ws.video.canvas["side"].grab()

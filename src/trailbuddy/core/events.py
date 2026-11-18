@@ -145,7 +145,8 @@ def descent_window(pose, pad_before: float = 0.4, pad_after: float = 0.3, min_dr
     from scipy.ndimage import median_filter
 
     hy = np.nanmean(pose.xy[:, [23, 24], 1], axis=1)
-    leg = np.nanmedian(np.linalg.norm(pose.xy[:, 23] - pose.xy[:, 27], axis=1))
+    from .landmarks import leg_length_px
+    leg = leg_length_px(pose.xy) if pose.n_frames else np.nan
     ok = np.isfinite(hy)
     if ok.sum() < 10 or not np.isfinite(leg) or leg <= 0:
         return None

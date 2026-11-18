@@ -51,6 +51,22 @@ def card(title: str | None = None) -> tuple[QFrame, QVBoxLayout]:
     return f, v
 
 
+def stance_intervals(res) -> dict[str, list[tuple[float, float]]]:
+    """Foot stance intervals (s, analysis clock) from a result's stance columns."""
+    out = {}
+    ts = res.timeseries
+    if "time_s" not in ts:
+        return out
+    t = ts["time_s"].to_numpy()
+    for side in ("left", "right"):
+        col = f"{side}_stance"
+        if col in ts:
+            m = ts[col].to_numpy().astype(bool)
+            e = np.flatnonzero(np.diff(np.concatenate(([0], m.astype(int), [0]))))
+            out[side] = [(float(t[a]), float(t[b - 1])) for a, b in zip(e[::2], e[1::2])]
+    return out
+
+
 def fmt_or(v, unit: str) -> str:
     return f"{v:g} {unit}" if v is not None else f"{unit}: not entered"
 
@@ -472,6 +488,7 @@ class WorkspacePage(QWidget):
     def _show_result(self):
         ins = self.inspector
         self.plots.set_result(self.res)
+        self.video.set_contacts(stance_intervals(self.res) if self.res is not None else {})
         ins.summary.clearSpans()
         ins.summary.setRowCount(0)
         ins.quality.setText("")

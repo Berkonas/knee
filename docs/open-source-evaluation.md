@@ -15,6 +15,8 @@ We checked each tool's licence and last activity from GitHub's API on 2026-11-17
 | [pyomeca](https://github.com/pyomeca/pyomeca) | Apache-2.0 | Biomechanical signal processing on xarray | **Not integrated.** Our filters (Butterworth, despiking, gap filling) are already implemented and tested. Adding xarray would mean a dependency without a measurable gain. |
 | [UI UX Pro Max](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) | MIT | Design-guidance skill for AI coding tools | **Not available as a skill here; principles applied by hand:** <br>• one primary action per panel <br>• progressive disclosure (advanced assumptions on the Biomechanics page, Methods as one screen plus a searchable list) <br>• colour never the only signal (evidence labels are text) <br>• consistent tokens in light and dark themes <br>• reduced motion respected |
 
+| [vision-demos](https://github.com/jeremyipark/vision-demos) | Apache-2.0 | Sports CV demos (running gait, reps, form) built on cloud ViTPose | **Ideas adopted, no code or model:**<br>• leg length = median thigh + median shank<br>• foot-strike flash and fading trails on the video<br>• checking left/right leg swaps (1 frame in our 21 recordings, so no correction is needed)<br>Its cloud ViTPose gateway was rejected: participant videos would leave the machine. |
+
 ## What changed in the code as a result
 
 - `core/pose_rtm.py`: tracked crops plus RTMPose-x ("accurate" mode, the default), re-detection on low confidence.

@@ -25,8 +25,8 @@ def candidate_segments(pose, min_drop_legs: float = 0.5) -> list[dict]:
     with warnings.catch_warnings():  # frames with no hip keypoints give NaN (expected)
         warnings.simplefilter("ignore", RuntimeWarning)
         hip = np.nanmean(pose.xy[:, [23, 24]], axis=1)
-    leg = np.nanmedian(np.concatenate([np.linalg.norm(pose.xy[:, 23] - pose.xy[:, 27], axis=1),
-                                       np.linalg.norm(pose.xy[:, 24] - pose.xy[:, 28], axis=1)]))
+    from .landmarks import leg_length_px
+    leg = leg_length_px(pose.xy)
     ok = np.isfinite(hip).all(axis=1)
     if ok.sum() < 10 or not np.isfinite(leg) or leg <= 0:
         return []

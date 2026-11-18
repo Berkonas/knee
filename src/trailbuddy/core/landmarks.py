@@ -100,3 +100,20 @@ class PoseSeries:
             xy[:, i, 1] = df[f"{nm}_y_px"].to_numpy()
             vis[:, i] = df[f"{nm}_vis"].to_numpy()
         return cls(df["time_s"].to_numpy(), xy, vis, fps, width, height, source)
+
+
+def leg_length_px(xy: np.ndarray) -> float:
+    """Leg length in pixels as median thigh + median shank (both legs pooled).
+
+    The straight hip-ankle distance shrinks whenever the knee bends, so on stairs its median runs short (the knee
+    is flexed for much of a descent); rigid segments keep their length however the knee bends. Idea from the
+    running demo in jeremyipark/vision-demos (Apache-2.0), re-implemented here."""
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        thigh = np.concatenate([np.linalg.norm(xy[:, 23] - xy[:, 25], axis=1), np.linalg.norm(xy[:, 24] - xy[:, 26], axis=1)])
+        shank = np.concatenate([np.linalg.norm(xy[:, 25] - xy[:, 27], axis=1), np.linalg.norm(xy[:, 26] - xy[:, 28], axis=1)])
+        return float(np.nanmedian(thigh) + np.nanmedian(shank)) if np.isfinite(thigh).any() and np.isfinite(shank).any() \
+            else float("nan")
+

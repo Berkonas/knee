@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.1.0 (2026-11-18)
+These changes follow ideas from [jeremyipark/vision-demos](https://github.com/jeremyipark/vision-demos) (Apache-2.0). All of it is re-implemented here and runs offline. Its cloud ViTPose model was not adopted, because it would upload participant videos.
+- Leg length is now the median thigh plus the median shank. The hip-to-ankle distance shrinks whenever the knee bends. This affects the spike-removal floor, the descent window and movement segmentation.
+- Foot-contact overlay: each planted foot is ringed on the video, and every foot strike flashes for 0.25 s. It shows in both views and follows the sync offset.
+- Trajectories now draw as fading, tapering trails.
+- Left/right leg swaps were checked on all 21 recordings: 1 frame in total. No correction is needed with the current tracker.
+
 ## 3.0.0 (2026-11-17)
 
 **Study data**

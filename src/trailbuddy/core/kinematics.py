@@ -135,7 +135,8 @@ def compute(pose: PoseSeries, scale_m_per_px: float | None = None, cutoff_hz: fl
     # spike removal: a landmark must deviate from its 7-frame running median by > 6 robust SD AND > 8% of
     # the leg length (so fast but genuine swing-phase motion is kept)
     from .signal import despike
-    leg = np.nanmedian(np.linalg.norm(pose.xy[:, 23] - pose.xy[:, 27], axis=1)) if pose.n_frames else np.nan
+    from .landmarks import leg_length_px
+    leg = leg_length_px(pose.xy) if pose.n_frames else np.nan
     floor = 0.08 * leg if np.isfinite(leg) else 0.0
     outliers = np.zeros(xy.shape[:2], bool)
     for k in range(xy.shape[1]):

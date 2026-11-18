@@ -26,6 +26,8 @@ from .theme import tok
 SIDE_COL = QColor("#59D0BE")
 LOW_COL = QColor("#F08A7E")
 POLE_COL = QColor("#FFB347")
+FOOT_COL = {"left": QColor("#59D0BE"), "right": QColor("#FFB347")}
+FLASH_S = 0.25   # a foot strike flashes for this long (idea from jeremyipark/vision-demos, re-implemented)
 
 
 class VideoCanvas(QWidget):
@@ -40,7 +42,7 @@ class VideoCanvas(QWidget):
         self.src_size = (1, 1)
         self.overlay = None   # dict with 'xy','vis','poles','trail','labels'
         self.message = "No recording"
-        self.show = {"skeleton": True, "poles": True, "trails": False, "labels": False}
+        self.show = {"skeleton": True, "poles": True, "trails": False, "labels": False, "contacts": True}
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setMinimumSize(240, 160)
 
@@ -87,10 +89,14 @@ class VideoCanvas(QWidget):
         xy, vis = ov.get("xy"), ov.get("vis")
         lw = max(1.5, 2.2 * sx * 1.6)
         if self.show["trails"] and ov.get("trail") is not None:
-            for path, col in ov["trail"]:
+            for path, col in ov["trail"]:  # comet: thin and transparent at the tail, full at the head
                 pts = [X(q) for q in path if np.isfinite(q).all()]
-                for a, b in zip(pts, pts[1:]):
-                    p.setPen(QPen(col, lw * 0.7))
+                n = max(1, len(pts) - 1)
+                for i, (a, b) in enumerate(zip(pts, pts[1:])):
+                    f = (i + 1) / n
+                    c = QColor(col)
+                    c.setAlphaF(min(1.0, 0.05 + 0.9 * f ** 1.4))
+                    p.setPen(QPen(c, lw * (0.25 + 1.0 * f), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
                     p.drawLine(a, b)
         if self.show["skeleton"] and xy is not None:
             for a, b in SKELETON:
@@ -104,6 +110,20 @@ class VideoCanvas(QWidget):
                 if np.isfinite(xy[i]).all():
                     p.setBrush(SIDE_COL if vis[i] >= 0.5 else LOW_COL)
                     p.drawEllipse(X(xy[i]), lw * 1.3, lw * 1.3)
+        if self.show["contacts"] and ov.get("contacts"):
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            for pt, side, age in ov["contacts"]:
+                if not np.isfinite(pt).all():
+                    continue
+                col = QColor(FOOT_COL.get(side, SIDE_COL))
+                p.setPen(QPen(col, lw * 1.1))
+                p.drawEllipse(X(pt), lw * 4.0, lw * 2.4)  # planted foot
+                if age < FLASH_S:  # foot strike: expanding, fading ring
+                    f = age / FLASH_S
+                    c = QColor(col)
+                    c.setAlphaF(0.9 * (1 - f))
+                    p.setPen(QPen(c, lw * 1.6))
+                    p.drawEllipse(X(pt), lw * (4.5 + 6 * f), lw * (3 + 4 * f))
         if self.show["poles"] and ov.get("poles"):
             for hand, tip, conf in ov["poles"]:
                 if np.isfinite(hand).all() and np.isfinite(tip).all():
@@ -147,6 +167,7 @@ class ViewSource:
         self.display_qc = {}
         self.smooth = True
         self.poles = {}
+        self.contacts: dict[str, list[tuple[float, float]]] = {}  # side -> stance intervals on this view's clock
         self.last_index = -1
 
     def set_tracking(self, pose, poles):
@@ -183,7 +204,14 @@ class ViewSource:
         trail = [(src_xy[lo:k + 1, 25], QColor(89, 208, 190, 150)), (src_xy[lo:k + 1, 26], QColor(255, 179, 71, 150)),
                  (src_xy[lo:k + 1, 29], QColor(89, 208, 190, 110)), (src_xy[lo:k + 1, 30], QColor(255, 179, 71, 110))]
         labels = labels_fn(xy) if labels_fn else []
-        return {"xy": xy, "vis": vis, "poles": poles, "trail": trail, "labels": labels}
+        contacts = []
+        for side, ivs in self.contacts.items():
+            for a, b in ivs:
+                if a <= t_view <= b:
+                    h, toe = (29, 31) if side == "left" else (30, 32)
+                    contacts.append(((src_xy[k, h] + src_xy[k, toe]) / 2, side, t_view - a))
+                    break
+        return {"xy": xy, "vis": vis, "poles": poles, "trail": trail, "labels": labels, "contacts": contacts}
 
     def close(self):
         self.reader.close()
@@ -259,10 +287,10 @@ class SyncVideoPanel(QWidget):
         tog = QHBoxLayout()
         tog.setSpacing(12)
         self.toggles = {}
-        for key, lab in (("skeleton", "Skeleton"), ("poles", "Poles"), ("trails", "Trajectories"), ("labels", "Angle labels"),
-                         ("smooth", "Smoothed display")):
+        for key, lab in (("skeleton", "Skeleton"), ("poles", "Poles"), ("contacts", "Foot contacts"),
+                         ("trails", "Trajectories"), ("labels", "Angle labels"), ("smooth", "Smoothed display")):
             cb = QCheckBox(lab)
-            cb.setChecked(key in ("skeleton", "poles", "smooth"))   # nothing but tracking lines on the video by default
+            cb.setChecked(key in ("skeleton", "poles", "smooth", "contacts"))   # nothing but tracking lines on the video by default
             if key == "smooth":
                 cb.setToolTip("Overlay only: 8 Hz zero-lag filter, implausible points hidden. Off = raw tracking. "
                               "Measurements always use their own processing.")
@@ -305,6 +333,14 @@ class SyncVideoPanel(QWidget):
     def master_role(self):
         return "side" if "side" in self.sources else "front"
 
+    def set_contacts(self, intervals: dict[str, list[tuple[float, float]]]):
+        """Foot stance intervals on the master (side) clock; each view gets them on its own clock."""
+        self._contacts_master = intervals
+        for role, src in self.sources.items():
+            shift = -self.offset if (role == "front" and "side" in self.sources) else 0.0
+            src.contacts = {s: [(a + shift, b + shift) for a, b in ivs] for s, ivs in intervals.items()}
+        self.seek(self.t, force=True)
+
     def view_time(self, role: str, t: float | None = None) -> float:
         t = self.t if t is None else t
         if role == "front" and "side" in self.sources:
@@ -316,7 +352,10 @@ class SyncVideoPanel(QWidget):
 
     def set_offset(self, off: float):
         self.offset = off
-        self.seek(self.t, force=True)
+        if getattr(self, "_contacts_master", None):
+            self.set_contacts(self._contacts_master)  # front-view contact times follow the new offset
+        else:
+            self.seek(self.t, force=True)
 
     def fps(self) -> float:
         m = self.sources.get(self.master_role())
