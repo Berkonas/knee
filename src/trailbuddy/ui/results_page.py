@@ -21,9 +21,11 @@ METRIC_CHOICES = ["quad_force_peak", "knee_ext_moment_peak", "knee_ext_impulse_p
                   "knee_flexion_velocity_peak", "hip_flexion_peak", "ankle_dorsiflexion_peak", "trunk_lean_mean",
                   "shoulder_flexion_peak", "elbow_flexion_mean", "shoulder_moment_peak", "elbow_moment_peak",
                   "pole_support_fraction", "pole_angle_at_contact", "speed", "cadence", "stance_time_mean",
-                  "step_time_cv"]
+                  "step_time_cv", "knee_ext_moment_peak_nm", "shoulder_moment_peak_per_kg", "elbow_moment_peak_per_kg",
+                  "pole_plant_timing", "pole_plant_timing_sd", "pole_simultaneous_fraction", "steps_without_pole",
+                  "pole_contact_time"]
 
-VIEWS = ["Overview", "By condition", "Pole length", "Repetitions", "Trade-off", "Stance curves"]
+VIEWS = ["Overview", "By condition", "Pole length", "Repetitions", "Trade-off", "Correlations", "Stance curves"]
 
 
 class ResultsPage(QWidget):
@@ -63,6 +65,14 @@ class ResultsPage(QWidget):
         for k in METRIC_CHOICES:
             self.metric_box.addItem(f"{INFO[k].label} ({INFO[k].unit})", k)
         row.addWidget(self.metric_box)
+        self.x_lbl = QLabel("vs")
+        self.x_box = QComboBox()
+        self.x_box.setToolTip("Second metric for the Correlations view (x axis)")
+        for k in METRIC_CHOICES:
+            self.x_box.addItem(f"{INFO[k].label} ({INFO[k].unit})", k)
+        self.x_box.setCurrentIndex(max(0, self.x_box.findData("pole_support_fraction")))
+        row.addWidget(self.x_lbl)
+        row.addWidget(self.x_box)
         row.addWidget(QLabel("Baseline"))
         self.baseline = QComboBox()
         row.addWidget(self.baseline)
@@ -94,6 +104,9 @@ class ResultsPage(QWidget):
         split.setSizes([480, 240])
         lay.addWidget(split, 1)
         self.metric_box.currentIndexChanged.connect(self.update_views)
+        self.x_box.currentIndexChanged.connect(self.update_views)
+        self.x_box.hide()
+        self.x_lbl.hide()
         self.baseline.currentIndexChanged.connect(self.update_views)
         self.terrain.currentIndexChanged.connect(self.refresh)
         state.resultsChanged.connect(self.refresh)
@@ -116,13 +129,20 @@ class ResultsPage(QWidget):
         task = self.terrain.currentData()
         if self.long is not None and task:
             self.long = self.long[self.long.task == task]
+        if self.long is not None and not self.long.empty:  # EMG channels come from the data
+            for k in sorted(k for k in self.long.metric.unique() if str(k).startswith("emg_")):
+                for box in (self.metric_box, self.x_box):
+                    if box.findData(k) < 0 and k in INFO:
+                        box.addItem(f"{INFO[k].label} ({INFO[k].unit})", k)
         has = self.long is not None and not self.long.empty
         self.btn_export.setEnabled(has)
         self.btn_savefig.setEnabled(has)
         self.update_views()
 
     def _view_changed(self, i):
-        uses_metric = VIEWS[i] in ("By condition", "Pole length", "Repetitions")
+        uses_metric = VIEWS[i] in ("By condition", "Pole length", "Repetitions", "Correlations")
+        self.x_box.setVisible(VIEWS[i] == "Correlations")
+        self.x_lbl.setVisible(VIEWS[i] == "Correlations")
         self.metric_box.setEnabled(uses_metric)
         self.metric_lbl.setEnabled(uses_metric)
         self.update_views()
@@ -131,7 +151,11 @@ class ResultsPage(QWidget):
         m = self.metric_box.currentData()
         info = INFO[m]
         view = VIEWS[self.view.index()]
-        if view in ("By condition", "Pole length", "Repetitions"):
+        if view == "Correlations":
+            self.explain.setText("Each point is one trial; lines and ρ are per participant. With 3 participants this "
+                                 "describes associations, it does not test them. Scenario loads depend on the "
+                                 "assumed pole force, so correlate them with measured quantities with care.")
+        elif view in ("By condition", "Pole length", "Repetitions"):
             self.explain.setText(f"{info.what} Why it matters: {info.why} Cannot conclude: {info.not_conclude}")
         else:
             self.explain.setText({
@@ -169,6 +193,8 @@ class ResultsPage(QWidget):
             fig = plots.fig_repetition(self.long, m)
         elif view == "Trade-off":
             fig = plots.fig_tradeoff_paired(self.long, base)
+        elif view == "Correlations":
+            fig = plots.fig_correlation(self.long, self.x_box.currentData(), m)
         else:
             fig = self._curves(p)
         self.canvas.set_figure(fig)

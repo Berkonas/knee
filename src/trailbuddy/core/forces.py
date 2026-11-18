@@ -7,6 +7,8 @@ CSV format (header row required, comma-separated):
     fx_n | ap_n               -> horizontal force along the walking direction (N, + forward)
     cop_x_m                   -> COP along the walking direction (m) in the plate frame
     pole_left_n, pole_right_n -> pole axial forces (N, compression +)
+    pole_left_raw, pole_right_raw -> raw pole-sensor readings, converted to N with the study's scale calibration
+                                     (inverse of reading = a*F + b; see core/calibration.py)
 The force recording's clock is aligned to the video with a user-entered offset
 (t_video = t_force + offset_s), e.g. from a shared clap/impact event.
 """
@@ -49,7 +51,7 @@ class ForceData:
         return out
 
 
-def load_force_csv(path: str | Path) -> ForceData:
+def load_force_csv(path: str | Path, calibration: dict | None = None) -> ForceData:
     df = pd.read_csv(path)
     cols = {c.lower().strip(): c for c in df.columns}
     if "time_s" not in cols:
@@ -63,6 +65,14 @@ def load_force_csv(path: str | Path) -> ForceData:
             if nm in cols:
                 ch[key] = df[cols[nm]].to_numpy(float)
                 break
+    for side in ("left", "right"):
+        raw = cols.get(f"pole_{side}_raw")
+        if raw is not None and f"pole_{side}" not in ch:
+            cal = (calibration or {}).get(side)
+            if not cal:
+                raise ValueError(f"pole_{side}_raw needs a pole calibration (Study > Pole force calibration).")
+            from .calibration import PoleCalibration
+            ch[f"pole_{side}"] = PoleCalibration(**cal).to_force(df[raw].to_numpy(float))
     if not ch:
         raise ValueError("No recognised force columns. Expected e.g. fz_n, fx_n, cop_x_m, pole_left_n.")
     return ForceData(t, ch, str(path))

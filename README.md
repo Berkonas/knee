@@ -17,6 +17,7 @@ much to trust it.
 >   measured forces.
 > * Loads need each participant's **measured body mass**. Nothing is calculated from default values.
 > * Every output is traced to its equation in [the calculation audit](docs/calculation-audit.md).
+> * How each research question maps to the app, and what to collect: [research questions](docs/research-questions.md).
 
 ---
 
@@ -107,7 +108,7 @@ recordings.
 | Knee, hip, ankle, trunk, shoulder, elbow angles; angular velocity; segment orientation | RTMPose landmarks (side view), filtered, 2D | Video estimate |
 | Knee frontal-plane projection angle, trunk sway, pelvic tilt, step width, pole spread | RTMPose landmarks (front view), 2D, scale-free | Video estimate |
 | Step time, stance time, cadence, speed | Foot speed (velocity threshold); scale | Video estimate |
-| Pole tip, axis angle, contact timing, plant timing vs foot strike | Automatic hand-anchored pole detection (or manual clicks) | Video estimate (tip error median 14 px against hand labels) |
+| Pole tip, axis angle, contact timing, plant timing vs foot strike | Automatic hand-anchored pole detection (or manual clicks) | Video estimate (tip error median 13 px against hand labels) |
 | Pole technique: alternating, simultaneous, single; timing class; steps without a pole | Pole-tip and foot contacts | Video estimate, with a confidence value |
 | Knee extensor moment | Inverse dynamics with force-plate data, **or** a quasi-static model with an assumed foot force | Model or Scenario |
 | Quadriceps force | Knee moment ÷ patellar tendon moment arm (5 cm; 4–6 cm range) | Model or Scenario |

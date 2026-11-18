@@ -106,6 +106,26 @@ class ParticipantDialog(QDialog):
         f.addRow("Preferred lead leg", self.lead)
         f.addRow("Footwear", self.shoe)
         f.addRow("Carried load", self.load)
+        self.arm = dsb(0, 1.2, 3, " m", (p.arm_length_m or 0) if p else 0, "not measured", "Acromion to wrist")
+        f.addRow("Arm length", self.arm)
+        f.addRow(section("Baseline tests (optional)"))
+        self.scale = QLineEdit(", ".join(f"{x:g}" for x in (p.pole_scale_kg if p else [])))
+        self.scale.setPlaceholderText("e.g. 6.5, 7.0, 7.2  (kg on the scale)")
+        self.scale.setToolTip("Push one pole onto a scale the way you plant it on the stairs; enter each reading in kg.\n"
+                              "Their mean (as % body weight) becomes this participant's scenario pole force.")
+        f.addRow("Pole push on scale", self.scale)
+        self._mvc = dict(p.mvc) if p else {}
+        self._mvc_source = p.mvc_source if p else ""
+        mrow = QHBoxLayout()
+        self.mvc_label = QLabel(self._mvc_text())
+        self.mvc_label.setObjectName("muted")
+        self.mvc_label.setWordWrap(True)
+        b = QPushButton("Load MVC trial…")
+        b.setToolTip("EMG CSV of a maximal voluntary contraction test (time_s + one column per muscle)")
+        b.clicked.connect(self._load_mvc)
+        mrow.addWidget(self.mvc_label, 1)
+        mrow.addWidget(b)
+        f.addRow("EMG maxima (MVC)", mrow)
         self.notes = QLineEdit(p.notes if p else "")
         f.addRow("Notes", self.notes)
         if p:
@@ -116,13 +136,45 @@ class ParticipantDialog(QDialog):
         outer.addWidget(bb)
         self.resize(500, 680)
 
+    def _mvc_text(self) -> str:
+        if not self._mvc:
+            return "none loaded"
+        return ", ".join(f"{k} {v:.3g}" for k, v in self._mvc.items()) + f"  ({Path(self._mvc_source).name})"
+
+    def _load_mvc(self):
+        from ..core.emg import mvc_from_file
+        path, _ = QFileDialog.getOpenFileName(self, "MVC trial (EMG CSV)", "", "CSV files (*.csv)")
+        if not path:
+            return
+        try:
+            new = mvc_from_file(path)
+        except Exception as e:
+            error_box(self, "Cannot read MVC file", str(e))
+            return
+        self._mvc.update(new)  # several MVC files (one per muscle test) accumulate
+        self._mvc_source = path
+        self.mvc_label.setText(self._mvc_text())
+
+    def _scale_values(self) -> list[float]:
+        out = []
+        for tok in self.scale.text().replace(";", ",").split(","):
+            tok = tok.strip()
+            if tok:
+                try:
+                    out.append(float(tok))
+                except ValueError:
+                    pass
+        return out
+
     def value(self) -> Participant:
         segs = {k: w.value() for k, w in self.seg.items() if w.value() > 0}
         return Participant(self.pid.text().strip(), self.mass.value() or None, self.height.value() or None,
                            self.leg.value() or None, self.pole.value() or None, segs, self.notes.text(),
                            age_years=self.age.value() or None, sex=self.sex.text().strip(),
                            dominant_leg=self.dom.currentData(), lead_leg=self.lead.currentData(),
-                           footwear=self.shoe.text().strip(), carried_load_kg=self.load.value() or None)
+                           footwear=self.shoe.text().strip(), carried_load_kg=self.load.value() or None,
+                           arm_length_m=self.arm.value() or None, pole_scale_kg=self._scale_values(),
+                           mvc=dict(self._mvc), mvc_source=self._mvc_source)
 
 
 class TrialDialog(QDialog):
@@ -233,6 +285,90 @@ class TrialDialog(QDialog):
         return None
 
 
+class CalibrationDialog(QDialog):
+    """Pole sensor calibration: scale readings (kg) vs sensor readings -> linear fit, used inverted on trial data."""
+
+    def __init__(self, parent, project: Project):
+        super().__init__(parent)
+        self.setWindowTitle("Pole force calibration")
+        self.project = project
+        v = QVBoxLayout(self)
+        intro = QLabel("Press each pole onto a scale at several forces and note the sensor reading at each. The fit "
+                       "reading = a·F + b is inverted during trials (F = (reading − b)/a) for force-file columns "
+                       "pole_left_raw / pole_right_raw.")
+        intro.setWordWrap(True)
+        intro.setObjectName("muted")
+        v.addWidget(intro)
+        self.tables, self.results = {}, {}
+        row = QHBoxLayout()
+        for side in ("left", "right"):
+            col = QVBoxLayout()
+            col.addWidget(section(f"{side.capitalize()} pole"))
+            t = QTableWidget(8, 2)
+            t.setHorizontalHeaderLabels(["Scale (kg)", "Sensor reading"])
+            t.verticalHeader().setVisible(False)
+            old = project.pole_calibration.get(side, {}).get("points", [])
+            for r, (kg, rd) in enumerate(old[:8]):
+                t.setItem(r, 0, QTableWidgetItem(f"{kg:g}"))
+                t.setItem(r, 1, QTableWidgetItem(f"{rd:g}"))
+            col.addWidget(t)
+            lab = QLabel(self._describe(project.pole_calibration.get(side)))
+            lab.setObjectName("muted")
+            lab.setWordWrap(True)
+            col.addWidget(lab)
+            self.tables[side], self.results[side] = t, lab
+            row.addLayout(col)
+        v.addLayout(row)
+        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        fit = bb.addButton("Fit", QDialogButtonBox.ButtonRole.ActionRole)
+        fit.clicked.connect(self.fit)
+        bb.accepted.connect(self._save)
+        bb.rejected.connect(self.reject)
+        v.addWidget(bb)
+        self.resize(620, 460)
+
+    @staticmethod
+    def _describe(cal) -> str:
+        if not cal:
+            return "Not calibrated."
+        return (f"reading = {cal['a']:.4g}·F + {cal['b']:.4g}   R² = {cal['r2']:.4f}   "
+                f"error ±{cal['rmse_n']:.1f} N   ({cal['n']} points)")
+
+    def _points(self, side):
+        t, pts = self.tables[side], []
+        for r in range(t.rowCount()):
+            a, b = t.item(r, 0), t.item(r, 1)
+            try:
+                if a and b and a.text().strip() and b.text().strip():
+                    pts.append((float(a.text()), float(b.text())))
+            except ValueError:
+                pass
+        return pts
+
+    def fit(self) -> dict:
+        from ..core.calibration import fit_calibration
+        out = {}
+        for side in ("left", "right"):
+            pts = self._points(side)
+            if not pts:
+                self.results[side].setText("Not calibrated.")
+                continue
+            try:
+                cal = fit_calibration([p[0] for p in pts], [p[1] for p in pts]).as_dict()
+            except ValueError as e:
+                self.results[side].setText(str(e))
+                continue
+            cal["points"] = pts
+            out[side] = cal
+            self.results[side].setText(self._describe(cal))
+        return out
+
+    def _save(self):
+        self.project.pole_calibration = self.fit()
+        self.project.save()
+        self.accept()
+
+
 class ProjectPage(QWidget):
     def __init__(self, state):
         super().__init__()
@@ -254,7 +390,10 @@ class ProjectPage(QWidget):
         self.btn_delstudy = QPushButton("Delete study…")
         self.btn_delstudy.setToolTip("Moves this study folder (trials, results, caches) to the system trash")
         self.btn_delstudy.clicked.connect(self.delete_study)
-        for b in (self.btn_new, self.btn_open, self.btn_demo, self.btn_delstudy):
+        self.btn_cal = QPushButton("Pole force calibration…")
+        self.btn_cal.setToolTip("Scale-test calibration for pole force sensors")
+        self.btn_cal.clicked.connect(lambda: self.project and CalibrationDialog(self, self.project).exec())
+        for b in (self.btn_new, self.btn_open, self.btn_demo, self.btn_cal, self.btn_delstudy):
             row.addWidget(b)
         row.addStretch(1)
         self.info = QLabel("No study open.")
@@ -340,7 +479,7 @@ class ProjectPage(QWidget):
         p = self.project
         has = p is not None
         for b in (self.btn_padd, self.btn_pedit, self.btn_pdel, self.btn_cadd, self.btn_cdel, self.btn_tadd,
-                  self.btn_tadd2, self.btn_tedit, self.btn_tdel, self.btn_topen, self.btn_delstudy):
+                  self.btn_tadd2, self.btn_tedit, self.btn_tdel, self.btn_topen, self.btn_delstudy, self.btn_cal):
             b.setEnabled(has)
         if not has:
             self.info.setText("No study open.")

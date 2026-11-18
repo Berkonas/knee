@@ -29,7 +29,7 @@ Symbols: *m* body mass, *g* = 9.81 m/s², θ angles from vertical, *r* knee-exte
 
 | Output | Equation | Inputs | Assumptions | Validation |
 |---|---|---|---|---|
-| Pole tip position | Hough segment from the hand + 7.1% of the hand-to-shaft-end length for the dark tip | video frame, wrist | pole colour (HSV), shaft starts at the hand | checked on real data: 13/16 hand-labelled tips found, none on the wrong object; median 14 px, 90th percentile 26 px (12 px median with each frame left out of the calibration) |
+| Pole tip position | Hough segment from the hand + 7.1% of the hand-to-shaft-end length for the dark tip | video frame, wrist | pole colour (HSV), shaft starts at the hand | checked on real data: 13/16 hand-labelled tips found, none on the wrong object; median 13 px, 90th percentile 25 px (12 px median with each frame left out of the calibration) |
 | Pole angle (deg) | angle of the hand→tip line from vertical | tip, wrist | 2D projection | unit-tested |
 | Pole contact, plant timing | tip stationary; plant minus nearest foot strike | tip track, contacts | a stationary tip is planted | unit-tested |
 | Technique (alternating, simultaneous, single, mixed) | share of plants within 0.15 s of the other pole's plant | pole contacts | both poles visible | unit-tested; a hidden pole in side views can read as "single pole" |
@@ -51,6 +51,15 @@ All loads need the measured body mass and a metric scale. Without them they are 
 | Elbow and shoulder moment (N·m, N·m/kg) | (r<sub>grip</sub> − r<sub>joint</sub>) × F<sub>pole</sub> + segment-weight moments | pole force (same value as in the knee model), grip, joints | quasi-static arm; force along the pole | unit-tested (direction and sign); pole force ±50% sensitivity |
 | Knee vs shoulder trade-off | paired change from the baseline condition within each participant | condition means, repetition SD | no-pole baseline has zero pole-induced arm moment | unit-tested |
 | Pole support (% BW) | mean vertical pole force / (m·g) during stance | pole force | scenario or load-cell | unit-tested |
+
+## Measured add-ons
+
+| Output | Equation | Inputs | Assumptions | Validation |
+|---|---|---|---|---|
+| EMG %MVC (peak, stance mean) | 100 × envelope / MVC. Envelope = 20–450 Hz band-pass, rectify, 50 ms RMS, 6 Hz low-pass. MVC = largest 0.5 s mean of the envelope in the MVC test | EMG CSV, MVC CSV, time offset | electrodes unchanged between the MVC and trial recordings | unit-tested (synthetic bursts at 50% of MVC amplitude) |
+| Pole force from a sensor | F = (reading − b) / a, from a least-squares fit of reading = a·F + b to the scale points (F = kg × g) | calibration points, raw sensor column | linear sensor, no drift | unit-tested (recovers force within 1 N; reports R² and error) |
+| Scenario pole force from the scale test | % BW = mean(scale kg) / body mass × 100 | scale readings, body mass | the test push represents typical plants | unit-tested |
+| Correlations | Spearman ρ and OLS slope per participant and terrain | trial-level metrics | descriptive; repeated trials are not independent | unit-tested |
 
 ## Never calculated from video
 

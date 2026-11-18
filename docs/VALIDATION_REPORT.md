@@ -8,51 +8,51 @@ Jitter: RMS frame-to-frame second difference of the leg keypoints (px/frame²), 
 
 | File | View | Device | Duration | fps | Trial | Pairing | Person detected | Leg jitter | Pole coverage (L/R) | Status |
 |---|---|---|---|---|---|---|---|---|---|---|
-| IMG_5602.mov | front | iPhone 11 Pro | 13.23 s | 59.96 | P01_UNSET_T01 | confident (r = 0.85) | 100% | 40.18 | 95%/98% | Passed |
-| IMG_5603.mov | front | iPhone 11 Pro | 15.11 s | 59.96 | P01_UNSET_T02 | confident (r = 0.73) | 100% | 111.91 | 86%/87% | Passed |
-| IMG_5604.mov | front | iPhone 11 Pro | 12.94 s | 59.96 | P01_UNSET_T03 | confident (r = 0.76) | 100% | 115.07 | 79%/84% | Passed |
-| IMG_5605.mov | front | iPhone 11 Pro | 8.36 s | 59.96 | P01_UNSET_T04 | review (r = 0.75) | 100% | 66.45 | 0%/26% | Needs review |
-| IMG_5606.mov | front | iPhone 11 Pro | 15.01 s | 59.97 | P02_UNSET_T01 | confident (r = 0.86) | 100% | 76.52 | 100%/99% | Passed |
-| IMG_5607.mov | front | iPhone 11 Pro | 17.33 s | 59.97 | P02_UNSET_T02 | confident (r = 0.84) | 100% | 84.79 | 98%/98% | Passed |
-| IMG_5608.mov | front | iPhone 11 Pro | 12.76 s | 59.96 | P02_UNSET_T03 | confident (r = 0.82) | 100% | 92.55 | 0%/10% | Passed |
-| IMG_5609.mov | front | iPhone 11 Pro | 10.72 s | 59.96 | P03_UNSET_T01 | single view: no audio-matching partner | 100% | 95.32 | 80%/72% | Limited (single view) |
-| IMG_5610.mov | front | iPhone 11 Pro | 11.16 s | 59.96 | P03_UNSET_T02 | single view: no audio-matching partner | 93% | 32.77 | 57%/58% | Limited (single view) |
-| IMG_5611.mov | front | iPhone 11 Pro | 10.51 s | 59.96 | P03_UNSET_T03 | confident (r = 0.77) | 100% | 90.82 | 80%/57% | Passed |
-| IMG_5612.mov | front | iPhone 11 Pro | 6.79 s | 59.97 | P03_UNSET_T04 | single view: no audio-matching partner | 100% | 85.45 | 1%/14% | Limited (single view) |
+| IMG_5602.mov | front | iPhone 11 Pro | 13.23 s | 59.96 | P01_UNSET_T01 | confident (r = 0.85) | 100% | 42.10 | 87%/86% | Passed |
+| IMG_5603.mov | front | iPhone 11 Pro | 15.11 s | 59.96 | P01_UNSET_T02 | confident (r = 0.73) | 100% | 95.94 | 78%/79% | Passed |
+| IMG_5604.mov | front | iPhone 11 Pro | 12.94 s | 59.96 | P01_UNSET_T03 | confident (r = 0.76) | 100% | 93.87 | 72%/68% | Passed |
+| IMG_5605.mov | front | iPhone 11 Pro | 8.36 s | 59.96 | P01_UNSET_T04 | review (r = 0.75) | 100% | 65.89 | 0%/27% | Needs review |
+| IMG_5606.mov | front | iPhone 11 Pro | 15.01 s | 59.97 | P02_UNSET_T01 | confident (r = 0.86) | 100% | 52.37 | 89%/84% | Passed |
+| IMG_5607.mov | front | iPhone 11 Pro | 17.33 s | 59.97 | P02_UNSET_T02 | confident (r = 0.84) | 100% | 86.75 | 78%/69% | Passed |
+| IMG_5608.mov | front | iPhone 11 Pro | 12.76 s | 59.96 | P02_UNSET_T03 | confident (r = 0.82) | 100% | 94.21 | 0%/10% | Passed |
+| IMG_5609.mov | front | iPhone 11 Pro | 10.72 s | 59.96 | P03_UNSET_T01 | single view: no audio-matching partner | 100% | 85.44 | 56%/51% | Limited (single view) |
+| IMG_5610.mov | front | iPhone 11 Pro | 11.16 s | 59.96 | P03_UNSET_T02 | single view: no audio-matching partner | 92% | 35.24 | 57%/53% | Limited (single view) |
+| IMG_5611.mov | front | iPhone 11 Pro | 10.51 s | 59.96 | P03_UNSET_T03 | confident (r = 0.77) | 100% | 82.84 | 53%/32% | Passed |
+| IMG_5612.mov | front | iPhone 11 Pro | 6.79 s | 59.97 | P03_UNSET_T04 | single view: no audio-matching partner | 100% | 70.91 | 2%/16% | Limited (single view) |
 | IMG_7486.mov | – | iPhone 15 Pro Max | 0.13 s | 60.00 | – | – | – | – | – | Excluded: Too short (0.13 s): likely an aborted recording |
-| IMG_7487.mov | side | iPhone 15 Pro Max | 13.29 s | 59.96 | P01_UNSET_T01 | confident (r = 0.85) | 100% | 2.48 | 59%/70% | Passed |
-| IMG_7488.mov | side | iPhone 15 Pro Max | 14.31 s | 59.97 | P01_UNSET_T02 | confident (r = 0.73) | 100% | 3.42 | 70%/68% | Passed |
-| IMG_7489.mov | side | iPhone 15 Pro Max | 13.31 s | 59.96 | P01_UNSET_T03 | confident (r = 0.76) | 100% | 4.33 | 62%/65% | Passed |
-| IMG_7490.mov | side | iPhone 15 Pro Max | 9.64 s | 59.97 | P01_UNSET_T04 | review (r = 0.75) | 100% | 2.83 | 4%/2% | Needs review |
-| IMG_7491.mov | side | iPhone 15 Pro Max | 15.99 s | 59.96 | P02_UNSET_T01 | confident (r = 0.86) | 100% | 1.96 | 82%/67% | Passed |
-| IMG_7492.mov | side | iPhone 15 Pro Max | 17.38 s | 59.97 | P02_UNSET_T02 | confident (r = 0.84) | 100% | 4.32 | 73%/72% | Passed |
-| IMG_7493.mov | side | iPhone 15 Pro Max | 13.26 s | 59.96 | P02_UNSET_T03 | confident (r = 0.82) | 100% | 1.71 | 6%/8% | Passed |
+| IMG_7487.mov | side | iPhone 15 Pro Max | 13.29 s | 59.96 | P01_UNSET_T01 | confident (r = 0.85) | 100% | 2.47 | 62%/73% | Passed |
+| IMG_7488.mov | side | iPhone 15 Pro Max | 14.31 s | 59.97 | P01_UNSET_T02 | confident (r = 0.73) | 100% | 3.20 | 70%/70% | Passed |
+| IMG_7489.mov | side | iPhone 15 Pro Max | 13.31 s | 59.96 | P01_UNSET_T03 | confident (r = 0.76) | 100% | 3.49 | 58%/68% | Passed |
+| IMG_7490.mov | side | iPhone 15 Pro Max | 9.64 s | 59.97 | P01_UNSET_T04 | review (r = 0.75) | 100% | 2.80 | 4%/3% | Needs review |
+| IMG_7491.mov | side | iPhone 15 Pro Max | 15.99 s | 59.96 | P02_UNSET_T01 | confident (r = 0.86) | 100% | 2.02 | 83%/65% | Passed |
+| IMG_7492.mov | side | iPhone 15 Pro Max | 17.38 s | 59.97 | P02_UNSET_T02 | confident (r = 0.84) | 100% | 3.37 | 73%/73% | Passed |
+| IMG_7493.mov | side | iPhone 15 Pro Max | 13.26 s | 59.96 | P02_UNSET_T03 | confident (r = 0.82) | 100% | 1.71 | 6%/9% | Passed |
 | IMG_7494.mov | – | iPhone 15 Pro Max | 0.08 s | 60.00 | – | – | – | – | – | Excluded: Too short (0.08 s): likely an aborted recording |
-| IMG_7496.mov | side | iPhone 15 Pro Max | 8.02 s | 59.96 | P03_UNSET_T05 | single view: no audio-matching partner | 100% | 2.08 | 89%/42% | Limited (single view) |
-| IMG_7497.mov | side | iPhone 15 Pro Max | 10.47 s | 59.96 | P03_UNSET_T03 | confident (r = 0.77) | 100% | 2.68 | 55%/61% | Passed |
-| IMG_7498.mov | side | iPhone 15 Pro Max | 6.29 s | 59.95 | P03_UNSET_T06 | single view: no audio-matching partner | 100% | 2.97 | 10%/3% | Limited (single view) |
+| IMG_7496.mov | side | iPhone 15 Pro Max | 8.02 s | 59.96 | P03_UNSET_T05 | single view: no audio-matching partner | 100% | 2.08 | 84%/42% | Limited (single view) |
+| IMG_7497.mov | side | iPhone 15 Pro Max | 10.47 s | 59.96 | P03_UNSET_T03 | confident (r = 0.77) | 100% | 2.68 | 57%/58% | Passed |
+| IMG_7498.mov | side | iPhone 15 Pro Max | 6.29 s | 59.95 | P03_UNSET_T06 | single view: no audio-matching partner | 100% | 2.83 | 12%/2% | Limited (single view) |
 
 ## Trials
 
 | Trial | Views | Sync offset (method) | Window | Poles detected | Peak knee flexion | Export matches app |
 |---|---|---|---|---|---|---|
-| P01_UNSET_T01 | side+front | +0.190 s (audio-envelope) | 4.22–12.37 s | yes | 94.8° | yes |
-| P01_UNSET_T02 | side+front | +0.620 s (audio-envelope) | 5.72–13.81 s | yes | 90.8° | yes |
+| P01_UNSET_T01 | side+front | +0.190 s (audio-envelope) | 4.22–12.37 s | yes | 95.0° | yes |
+| P01_UNSET_T02 | side+front | +0.620 s (audio-envelope) | 5.72–13.81 s | yes | 91.0° | yes |
 | P01_UNSET_T03 | side+front | +0.630 s (audio-envelope) | 4.14–11.09 s | yes | 91.9° | yes |
-| P01_UNSET_T04 | side+front | +1.040 s (audio-envelope) | 2.25–8.67 s | no | 94.1° | yes |
-| P02_UNSET_T01 | side+front | +0.340 s (audio-envelope) | 3.44–14.33 s | yes | 92.7° | yes |
+| P01_UNSET_T04 | side+front | +1.040 s (audio-envelope) | 2.25–8.67 s | no | 94.2° | yes |
+| P02_UNSET_T01 | side+front | +0.340 s (audio-envelope) | 3.44–14.33 s | yes | 91.1° | yes |
 | P02_UNSET_T02 | side+front | +0.270 s (audio-envelope) | 3.79–16.19 s | yes | 91.9° | yes |
-| P02_UNSET_T03 | side+front | +0.430 s (audio-envelope) | 1.55–11.59 s | no | 94.0° | yes |
+| P02_UNSET_T03 | side+front | +0.430 s (audio-envelope) | 1.55–11.59 s | no | 94.1° | yes |
 | P03_UNSET_T01 | front | – | 3.97–10.71 s | – | – | yes |
 | P03_UNSET_T02 | front | – | 0.78–3.32 s | – | – | yes |
-| P03_UNSET_T03 | side+front | -0.380 s (audio-envelope) | 3.14–9.27 s | yes | 80.2° | yes |
+| P03_UNSET_T03 | side+front | -0.380 s (audio-envelope) | 3.14–9.27 s | yes | 80.4° | yes |
 | P03_UNSET_T04 | front | – | 1.67–5.75 s | – | – | yes |
-| P03_UNSET_T05 | side | – | 0.00–8.00 s | yes | 84.8° | yes |
-| P03_UNSET_T06 | side | – | 1.65–5.15 s | no | 55.1° | yes |
+| P03_UNSET_T05 | side | – | 0.00–8.00 s | yes | 84.7° | yes |
+| P03_UNSET_T06 | side | – | 1.65–5.15 s | no | 51.7° | yes |
 
 ## Pole tips against hand labels
 
-13 of 16 hand-labelled tips found, 0 detections on another object. Tip error: median 13.8 px, 90th percentile 26.4 px, maximum 31.8 px (in-sample; the 7.1% dark-tip extension was calibrated on these labels; leave-one-frame-out median 12.4 px).
+13 of 16 hand-labelled tips found, 0 detections on another object. Tip error: median 13.0 px, 90th percentile 24.6 px, maximum 28.0 px (in-sample; the 7.1% dark-tip extension was calibrated on these labels; leave-one-frame-out median 12.4 px).
 
 ## Findings that need a person
 

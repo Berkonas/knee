@@ -94,7 +94,7 @@ knees on loose, light-coloured trousers, while RTMPose found the knees, heels an
    * The coloured shaft ends above a short dark rubber tip and ferrule, which is hard to see against the black
      stairs. The reported tip therefore extends the hand-to-shaft-end line by 7.1%. That fraction is the median from
      12 hand-labelled tips (IQR 6.6–7.6%).
-   * Tip error against the 16 hand labels through the full pipeline: median 14 px, 90th percentile 26 px. With
+   * Tip error against the 16 hand labels through the full pipeline: median 13 px, 90th percentile 25 px. With
      each frame left out of the calibration in turn the median is 12 px. Before this change it was median 30 px.
      13 of 16 tips were found and none were on the wrong object. The labels are in
      `docs/validation/manual_pole_tips.json`.

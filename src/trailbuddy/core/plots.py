@@ -247,6 +247,59 @@ def fig_tradeoff_paired(long: pd.DataFrame, baseline: str = "C0") -> Figure:
     return fig
 
 
+def correlation_table(long: pd.DataFrame, x_metric: str, y_metric: str) -> pd.DataFrame:
+    """Trial-level pairs of two metrics with, per participant (and terrain), Spearman's rho and the OLS slope.
+    Repeated trials of one person are not independent, so no pooled p-values are given."""
+    from scipy.stats import spearmanr
+
+    if "task" not in long:
+        long = long.assign(task="stair_descent")
+    w = long[long.metric.isin([x_metric, y_metric])].pivot_table(
+        index=["trial_id", "participant", "task", "condition"], columns="metric", values="value").reset_index()
+    if x_metric not in w or y_metric not in w:
+        return pd.DataFrame(columns=["participant", "task", "n", "rho", "slope"])
+    w = w.dropna(subset=[x_metric, y_metric])
+    rows = []
+    for (pid, task), g in w.groupby(["participant", "task"]):
+        if len(g) < 3 or g[x_metric].nunique() < 2:
+            rows.append({"participant": pid, "task": task, "n": len(g), "rho": np.nan, "slope": np.nan})
+            continue
+        rho = spearmanr(g[x_metric], g[y_metric]).statistic
+        slope = np.polyfit(g[x_metric], g[y_metric], 1)[0]
+        rows.append({"participant": pid, "task": task, "n": len(g), "rho": float(rho), "slope": float(slope)})
+    out = pd.DataFrame(rows)
+    out.attrs["points"] = w
+    return out
+
+
+def fig_correlation(long: pd.DataFrame, x_metric: str, y_metric: str) -> Figure:
+    fig, ax = _fig(5.6, 3.8)
+    tab = correlation_table(long, x_metric, y_metric)
+    w = tab.attrs.get("points")
+    xi, yi = INFO.get(x_metric), INFO.get(y_metric)
+    if w is None or w.empty:
+        ax.text(0.5, 0.5, "No trials have both metrics.", ha="center", va="center", transform=ax.transAxes)
+        ax.set_axis_off()
+        return fig
+    for i, (pid, g) in enumerate(w.groupby("participant")):
+        col = PALETTE[i % len(PALETTE)]
+        ax.scatter(g[x_metric], g[y_metric], s=28, color=col)
+        r = tab[tab.participant == pid]
+        lab = pid
+        if len(r) and np.isfinite(r.rho.iloc[0]):
+            lab += f" (ρ = {r.rho.iloc[0]:+.2f}, n = {int(r.n.iloc[0])})"
+            if g[x_metric].nunique() > 1:
+                k, b = np.polyfit(g[x_metric], g[y_metric], 1)
+                xx = np.linspace(g[x_metric].min(), g[x_metric].max(), 10)
+                ax.plot(xx, k * xx + b, color=col, lw=1.2)
+        ax.plot([], [], "o", color=col, label=lab)
+    ax.set_xlabel(f"{xi.label} ({xi.unit})" if xi else x_metric)
+    ax.set_ylabel(f"{yi.label} ({yi.unit})" if yi else y_metric)
+    ax.set_title("Within-participant association (descriptive, no p-values)")
+    ax.legend(frameon=False, fontsize=7)
+    return fig
+
+
 def fig_sensitivity(res) -> Figure:
     fig, ax = _fig(5.0, 3.0)
     s = res.sensitivity

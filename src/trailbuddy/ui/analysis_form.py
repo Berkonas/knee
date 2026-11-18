@@ -24,6 +24,11 @@ def dspin(lo, hi, val, step=0.01, dec=2, suffix="", tip=""):
     return s
 
 
+def _short(p: str) -> str:
+    from pathlib import Path as _P
+    return _P(p).name
+
+
 def hint(text: str) -> QLabel:
     lab = QLabel(text)
     lab.setObjectName("muted")
@@ -133,6 +138,21 @@ class AnalysisForm(QObject):
         self.force_label.setObjectName("muted")
         self.force_label.setWordWrap(True)
         f.addRow("", self.force_label)
+        row = QHBoxLayout()
+        self.btn_emg = QPushButton("Import EMG CSV…")
+        self.btn_emg.setToolTip("time_s + one column per muscle; normalised with the participant's MVC tests")
+        self.btn_emg.clicked.connect(self._pick_emg)
+        self.btn_emg_clear = QPushButton("Clear")
+        self.btn_emg_clear.clicked.connect(lambda: self.set_emg_file(""))
+        row.addWidget(self.btn_emg, 1)
+        row.addWidget(self.btn_emg_clear)
+        f.addRow("EMG", row)
+        self.emg_offset = dspin(-600, 600, 0, 0.001, 3, " s", "t_video = t_emg + offset")
+        f.addRow("EMG time offset", self.emg_offset)
+        self.emg_label = QLabel("None")
+        self.emg_label.setObjectName("muted")
+        self.emg_label.setWordWrap(True)
+        f.addRow("", self.emg_label)
         v.addWidget(fw)
 
         # ---- advanced -------------------------------------------------------------------------
@@ -168,6 +188,7 @@ class AnalysisForm(QObject):
         v.addWidget(fw)
 
         self.force_file = ""
+        self.emg_file = ""
         self.pole_mode.currentIndexChanged.connect(self._sync_enabled)
         self.load_mode.currentIndexChanged.connect(self._sync_enabled)
         self.scale_method.currentIndexChanged.connect(self._sync_enabled)
@@ -191,17 +212,43 @@ class AnalysisForm(QObject):
         self.btn_pick_scale.setEnabled(pts)
         self.scale_dist.setEnabled(pts)
 
+    def set_emg_file(self, path: str):
+        self.emg_file = path
+        from pathlib import Path as _P
+        self.emg_label.setText(_P(path).name if path else "None")
+
+    def _pick_emg(self):
+        p, _ = QFileDialog.getOpenFileName(None, "Import EMG", "", "CSV files (*.csv)")
+        if p:
+            from ..core.emg import load_emg_csv
+            try:
+                d = load_emg_csv(p)
+            except Exception as e:
+                from .widgets import error_box
+                error_box(None, "Cannot read EMG file", str(e))
+                return
+            self.set_emg_file(p)
+            self.emg_label.setText(f"{_short(p)}: {', '.join(d.channels)} at {d.fs:.0f} Hz")
+            self.changed.emit()
+
     def _pick_force(self):
         p, _ = QFileDialog.getOpenFileName(None, "Import force data", "", "CSV files (*.csv)")
         if p:
             from ..core.forces import load_force_csv
             try:
                 fd = load_force_csv(p)
+                chans = ", ".join(fd.channels)
+            except ValueError as e:
+                if "pole calibration" not in str(e):
+                    from .widgets import error_box
+                    error_box(None, "Cannot read force file", str(e))
+                    return
+                chans = "raw pole sensor (converted with the study's pole calibration)"
             except Exception as e:
                 from .widgets import error_box
                 error_box(None, "Cannot read force file", str(e))
                 return
-            self.set_force_file(p, ", ".join(fd.channels))
+            self.set_force_file(p, chans)
 
     def set_force_file(self, path: str, channels: str = ""):
         from pathlib import Path
@@ -289,6 +336,8 @@ class AnalysisForm(QObject):
         self.moment_arm.setValue(100 * s.get("moment_arm_m", MOMENT_ARM_NOMINAL_M))
         self.pole_pct.setValue(s.get("pole_pct_bw", 10.0))
         self.force_offset.setValue(s.get("force_offset_s", 0.0))
+        self.set_emg_file(s.get("emg_csv", "") or "")
+        self.emg_offset.setValue(float(s.get("emg_offset_s", 0.0) or 0.0))
         self.scale_points = [tuple(p) for p in s.get("scale_points", [])]
         if "scale_distance_m" in s:
             self.scale_dist.setValue(s["scale_distance_m"])
@@ -304,5 +353,7 @@ class AnalysisForm(QObject):
         trial.settings["scale_points"] = self.scale_points
         trial.settings["scale_distance_m"] = self.scale_dist.value()
         trial.settings["force_csv"] = self.force_file
+        trial.settings["emg_csv"] = self.emg_file
+        trial.settings["emg_offset_s"] = self.emg_offset.value()
         trial.settings["pose_model"] = self.model.currentData()
         trial.stair.update(self.stair())

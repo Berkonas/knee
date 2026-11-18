@@ -30,7 +30,7 @@
 
 **Pole tips**
 - The tip now includes the dark rubber tip (7.1% extension calibrated on hand labels).
-- Median tip error fell from 30 px to 14 px with the full pipeline (12 px when each frame is left out of the calibration).
+- Median tip error fell from 30 px to 13 px with the full pipeline (12 px when each frame is left out of the calibration).
 
 **Events, technique and segments**
 - Foot strike and toe-off, single and double support.
@@ -49,6 +49,29 @@
 - Compare: paired knee-vs-shoulder trade-off per participant, with repetition SD.
 - Study: data-quality panel and per-trial checks.
 - Methods: one compact screen plus a searchable metric list.
+
+**Study design and extra data**
+- *TrailBuddy full design* template: 4 pole conditions × 3 terrains × 3 repetitions (108 trials).
+- The terrain code is part of each trial ID (stair-descent IDs unchanged). Compare has a terrain filter, and
+  comparisons never pool terrains.
+- EMG: import trial CSVs, MVC tests per participant, %MVC peak and stance mean per muscle. The processing is a
+  20–450 Hz band-pass, then rectification, a 50 ms RMS and a 6 Hz low-pass.
+- Pole force calibration: scale-test points, a linear fit and its inverse convert raw sensor columns to newtons.
+  R² and the error are reported.
+- A participant's scale-test readings set their scenario pole force (% body weight).
+- Compare, *Correlations*: any two metrics, per-participant Spearman ρ and slope, no pooled p-values.
+- `docs/research-questions.md` maps the 10 research questions to app views and required data.
+
+**Specialist review fixes**
+- Exact frame times from tracking caches. Support-phase durations had been inflated by about 20%.
+- Tighter identity gates; crops clipped to the image; keypoints outside the image dropped.
+- No dark-tip extension on cut-off poles.
+- Arm ranges are computed per pole-force scale.
+- A vertical foot force is described as an alternative assumption, not an upper bound.
+- Data safety: thread-safe saves and backups that are never overwritten. Rename and restore never half-apply.
+  A changed condition marks results stale. Edits are refused while an analysis runs.
+- Dark-theme contrast, themed charts, and clearer empty states. The pairing warning is always shown. Playback
+  keys work only on Analyse.
 
 **Docs**
 - `docs/calculation-audit.md`: every output linked to its equation, inputs, assumptions and validation state.

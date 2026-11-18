@@ -269,6 +269,34 @@ INFO: dict[str, MetricInfo] = {
 
 
 # Report grouping (order matters: shown top to bottom).
+def ensure_emg_info(channel: str) -> None:
+    """Register labels for an EMG channel's metrics (channel names come from the user's EMG file)."""
+    nice = channel.replace("_", " ")
+    INFO.setdefault(f"emg_{channel}_peak", MetricInfo(
+        f"EMG {nice}, peak", "%MVC", f"Highest {nice} activation in the analysis window, as % of its MVC test.",
+        "Shows how close the muscle came to its maximal effort.",
+        "Relative muscle effort between conditions for this participant.",
+        "Activation is not force; cross-talk and electrode placement affect it."))
+    INFO.setdefault(f"emg_{channel}_stance_mean", MetricInfo(
+        f"EMG {nice}, stance mean", "%MVC", f"Mean {nice} activation during stance of the analysed leg.",
+        "Average effort while the leg supports the body.",
+        "Relative muscle effort between conditions for this participant.",
+        "Activation is not force."))
+    cat = CATEGORIES.setdefault("Muscle activity (EMG)", [])
+    for k in (f"emg_{channel}_peak", f"emg_{channel}_stance_mean"):
+        if k not in cat:
+            cat.append(k)
+
+
+def ensure_info_for_key(key: str) -> None:
+    if key in INFO or not key.startswith("emg_"):
+        return
+    for suf in ("_stance_mean", "_peak"):
+        if key.endswith(suf):
+            ensure_emg_info(key[4:-len(suf)])
+            return
+
+
 CATEGORIES: dict[str, list[str]] = {
     "Joint kinematics": ["knee_flexion_peak", "knee_flexion_at_contact", "knee_flexion_velocity_peak",
                          "knee_flexion_rom", "hip_flexion_peak", "ankle_dorsiflexion_peak", "trunk_lean_mean",

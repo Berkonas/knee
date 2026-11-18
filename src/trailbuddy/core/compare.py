@@ -25,6 +25,9 @@ def collect(project) -> pd.DataFrame:
         if tr.status != "analysed" or not (d / "summary.csv").exists():  # e.g. condition changed since analysis
             continue
         s = pd.read_csv(d / "summary.csv")
+        from .metrics import ensure_info_for_key
+        for k in s["key"]:
+            ensure_info_for_key(str(k))
         cond = project.condition(tr.condition_code)
         for _, r in s.iterrows():
             rows.append({"trial_id": tr.id, "participant": tr.participant_id, "condition": tr.condition_code,

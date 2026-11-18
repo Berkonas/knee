@@ -206,3 +206,19 @@ def test_tradeoff_table_is_paired_within_participant():
     assert tt.loc["P01", "arm_delta"] == pytest.approx(0.2)  # no-pole baseline counts as zero arm moment
     assert tt.loc["P01", "n"] == 2 and np.isfinite(tt.loc["P01", "knee_pct_sd"])
     fig_tradeoff_paired(pd.DataFrame(rows), "C0")
+
+
+def test_correlation_table_is_per_participant():
+    from trailbuddy.core.plots import correlation_table, fig_correlation
+    rows = []
+    for pid, sign in (("P01", 1), ("P02", -1)):
+        for k in range(5):
+            tid = f"{pid}_{k}"
+            rows += [{"trial_id": tid, "participant": pid, "task": "stair_descent", "condition": "C1",
+                      "metric": "pole_support_fraction", "value": float(k)},
+                     {"trial_id": tid, "participant": pid, "task": "stair_descent", "condition": "C1",
+                      "metric": "knee_ext_moment_peak", "value": 1.5 - sign * 0.05 * k}]
+    tab = correlation_table(pd.DataFrame(rows), "pole_support_fraction", "knee_ext_moment_peak").set_index("participant")
+    assert tab.loc["P01", "rho"] == pytest.approx(-1.0) and tab.loc["P02", "rho"] == pytest.approx(1.0)
+    assert tab.loc["P01", "slope"] == pytest.approx(-0.05)
+    fig_correlation(pd.DataFrame(rows), "pole_support_fraction", "knee_ext_moment_peak")

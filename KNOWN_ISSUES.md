@@ -5,9 +5,9 @@
 - **Pole detection is incomplete.** Against 16 hand-labelled pole tips on 8 reference frames (all 3 participants, both views), version 3:
   - found 13 tips; the misses were the hidden second pole in side views
   - had no wrong-shaft detections
-  - had a tip error of median 14 px, 90th percentile 26 px and maximum 32 px through the full pipeline (12 px median when each frame is left out of the calibration). Version 2 had a median of 30 px.
+  - had a tip error of median 13 px, 90th percentile 25 px and maximum 28 px through the full pipeline (12 px median when each frame is left out of the calibration). Version 2 had a median of 30 px.
 
-  At this camera distance 14 px is about 4 cm. Pole angles remain more reliable than tip coordinates. The labels came from one annotator reading zoomed frames against a 20 px grid, with an estimated uncertainty of about ±5 px.
+  At this camera distance 13 px is about 4 cm. Pole angles remain more reliable than tip coordinates. The labels came from one annotator reading zoomed frames against a 20 px grid, with an estimated uncertainty of about ±5 px.
 - **Pairing gaps for P03.** Front recordings IMG_5609, 5610 and 5612, and side recordings IMG_7496 and 7498, have no audio-matching partner.
 - **Inputs still needed.** No participant has measured body mass or height yet, and all 13 trials have no condition assigned (`UNSET`). Loads stay unavailable and condition comparisons are empty until these are entered.
 - **Peak knee flexion rose with the new tracker.** With RTMPose-x on tracked crops, peak knee flexion on full descents is 90–95°, versus 85–90° with the old model. Published values are 83 ± 7° (Lewis 2015). No marker-based reference exists for our recordings, so we cannot say which model is closer. Compare conditions within one tracker version.

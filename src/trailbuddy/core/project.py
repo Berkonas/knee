@@ -57,7 +57,8 @@ SEGMENT_FIELDS = {
 }
 
 PARTICIPANT_EDIT_FIELDS = ("body_mass_kg", "height_m", "leg_length_m", "standard_pole_length_cm", "segments", "notes",
-                           "age_years", "sex", "dominant_leg", "lead_leg", "footwear", "carried_load_kg")
+                           "age_years", "sex", "dominant_leg", "lead_leg", "footwear", "carried_load_kg",
+                           "arm_length_m", "pole_scale_kg", "mvc", "mvc_source")
 
 PID_RE = re.compile(r"^[A-Za-z0-9_-]{1,16}$")
 
@@ -80,6 +81,10 @@ class Participant:
     lead_leg: str = ""                  # preferred leading leg on descent
     footwear: str = ""
     carried_load_kg: float | None = None
+    arm_length_m: float | None = None    # acromion to wrist, measured
+    pole_scale_kg: list = field(default_factory=list)  # scale readings while pushing a pole as in descent (kg)
+    mvc: dict = field(default_factory=dict)            # EMG channel -> MVC envelope value (from an MVC trial)
+    mvc_source: str = ""
 
     @property
     def metrics_entered(self) -> bool:
@@ -146,6 +151,7 @@ class Project:
     participants: list[Participant] = field(default_factory=list)
     trials: list[Trial] = field(default_factory=list)
     root: Path | None = None
+    pole_calibration: dict = field(default_factory=dict)  # 'left'/'right' -> PoleCalibration.as_dict()
 
     @classmethod
     def new(cls, root: str | Path, name: str, experiment: str = "exp1") -> "Project":
@@ -329,6 +335,7 @@ class Project:
     # ---- persistence --------------------------------------------------------------------
     def to_dict(self) -> dict:
         d = {"schema": SCHEMA_VERSION, "name": self.name, "experiment": self.experiment,
+             "pole_calibration": self.pole_calibration,
              "conditions": [asdict(c) for c in self.conditions],
              "participants": [asdict(p) for p in self.participants],
              "trials": [self._trial_dict(t) for t in self.trials]}
@@ -383,7 +390,7 @@ class Project:
         return cls(name=d["name"], experiment=d.get("experiment", "exp1"),
                    conditions=[Condition(**_known(Condition, c)) for c in d.get("conditions", [])],
                    participants=[_participant_from_dict(p) for p in d.get("participants", [])],
-                   trials=trials, root=path.parent)
+                   trials=trials, root=path.parent, pole_calibration=d.get("pole_calibration", {}))
 
 
 def _known(cls, d: dict) -> dict:

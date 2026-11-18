@@ -44,6 +44,8 @@ class AnalysisSettings:
     # Mode A 'video': kinematics only, no forces or moments.  Mode B 'scenario': assumption-based loads.
     # Mode C 'measured': loads from imported force data (force plate, insoles, pole load cells).
     load_mode: str = "video"
+    use_scale_pole_force: bool = True        # scenario pole force from the participant's scale test when entered
+    scale_reading_is_both_poles: bool = False  # True if the scale test pressed both poles at once
     moment_arm_m: float = MOMENT_ARM_NOMINAL_M
     moment_arm_range_m: tuple[float, float] = MOMENT_ARM_RANGE_M
     pole_force_mode: str = "none"         # 'none' | 'scenario' | 'measured'
@@ -84,7 +86,7 @@ LOAD_MODES = {"video": "A · Video-only kinematics", "scenario": "B · Assumptio
 
 def analyse(pose: PoseSeries, body_mass: float | None, height_m: float | None, settings: AnalysisSettings,
             uses_poles: bool = False, poles: dict[str, PoleTrack] | None = None,
-            forces: ForceData | None = None, segments: dict | None = None) -> TrialResult:
+            forces: ForceData | None = None, segments: dict | None = None, emg=None) -> TrialResult:
     s = settings
     notes: list[str] = []
     poles = poles or {}
@@ -523,6 +525,24 @@ def analyse(pose: PoseSeries, body_mass: float | None, height_m: float | None, s
         for c in ivs:
             ev_rows.append({"event": f"{fs_}_foot_contact", "start_s": c.start_s, "end_s": c.end_s,
                             "duration_s": c.duration})
+    # ---- EMG (%MVC) ------------------------------------------------------------------------------
+    if emg is not None:
+        from . import emg as emgmod
+        from .metrics import ensure_emg_info
+        ed, mvc, off = emg
+        pct = emgmod.percent_mvc(ed, mvc, t, off)
+        for ch, y in pct.items():
+            ensure_emg_info(ch)
+            ts[f"emg_{ch}_pct_mvc"] = y
+            st_vals = y[stance & np.isfinite(y)]
+            M.append(MetricValue(f"emg_{ch}_peak", float(np.nanmax(y)) if np.isfinite(y).any() else None,
+                                 "measured" if np.isfinite(y).any() else "unavailable", "whole analysis window"))
+            M.append(MetricValue(f"emg_{ch}_stance_mean", float(st_vals.mean()) if st_vals.size else None,
+                                 "measured" if st_vals.size else "unavailable", f"{side} foot stance"))
+        missing = sorted(set(ed.channels) - set(pct))
+        if missing:
+            notes.append(f"EMG channels without an MVC value (not normalised): {', '.join(missing)}.")
+
     from .technique import analyse_technique, foot_event_rows, support_phases
     ev_rows += foot_event_rows(gait.contacts, float(t[0]), float(t[-1]))
     events = pd.DataFrame(ev_rows, columns=["event", "start_s", "end_s", "duration_s", "angle_at_contact_deg"])
@@ -578,6 +598,9 @@ def load_result(out_dir: str | Path) -> TrialResult:
     info = json.loads((out / "analysis.json").read_text())
     summ = pd.read_csv(out / "summary.csv")
     metrics = []
+    from .metrics import ensure_info_for_key
+    for k in summ["key"]:
+        ensure_info_for_key(str(k))
     for _, r in summ.iterrows():
         g = lambda k: None if pd.isna(r.get(k)) else float(r[k])  # noqa: E731
         kind = next(k for k, v in KINDS.items() if v == r["evidence"])

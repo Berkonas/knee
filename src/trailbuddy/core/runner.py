@@ -205,9 +205,28 @@ def run_pair(project, trial, settings: AnalysisSettings, proc: dict | None = Non
         if side_data and front_data:
             f_t = front_data[0].t + off  # front clock -> side clock
             t0, t1 = max(t0, float(f_t[0])), min(t1, float(f_t[-1]))
-    forces = load_force_csv(trial.settings["force_csv"]) if trial.settings.get("force_csv") else None
+    forces = (load_force_csv(trial.settings["force_csv"], project.pole_calibration)
+              if trial.settings.get("force_csv") else None)
     if trial.stair.get("step_height_m") and trial.stair.get("n_steps") and settings.descent_height_m is None:
         settings.descent_height_m = float(trial.stair["step_height_m"]) * int(trial.stair["n_steps"])
+    extra_notes = []
+    from .calibration import scale_pct_bw
+    scale_pct = scale_pct_bw(part.pole_scale_kg, part.body_mass_kg)
+    if settings.use_scale_pole_force and scale_pct is not None and settings.pole_force_mode == "scenario":
+        settings.pole_pct_bw = round(scale_pct / 2.0, 2) if settings.scale_reading_is_both_poles else round(scale_pct, 2)
+        extra_notes.append(f"Scenario pole force from {part.id}'s scale test: {settings.pole_pct_bw:g}% BW per pole "
+                           f"(mean of {len(part.pole_scale_kg)} reading(s)). It describes typical effort, not this trial.")
+    emg_pct = None
+    if trial.settings.get("emg_csv"):
+        from . import emg as emgmod
+        try:
+            ed = emgmod.load_emg_csv(trial.settings["emg_csv"])
+            if not part.mvc:
+                extra_notes.append("EMG loaded but no MVC values for this participant: %MVC unavailable.")
+            else:
+                emg_pct = (ed, part.mvc, float(trial.settings.get("emg_offset_s", 0.0)))
+        except (OSError, ValueError) as e:
+            extra_notes.append(f"EMG file could not be read: {e}")
     if side_data:
         pose_s = pipeline.slice_pose(side_data[0], t0, t1)
         poles_s = {k: pipeline.slice_track(v, t0, t1) for k, v in side_data[1].items()}
@@ -236,7 +255,8 @@ def run_pair(project, trial, settings: AnalysisSettings, proc: dict | None = Non
             res_note_cond = ""
         uses = (cond.uses_poles and cond.code != "UNSET") or detected
         res = analysis.analyse(pose_s, part.body_mass_kg, part.height_m, settings, uses, poles_s, forces,
-                               part.segments)
+                               part.segments, emg=emg_pct)
+        res.notes[:0] = extra_notes
         if detected and not cond.uses_poles:
             res.notes.append("Poles were detected although the condition says 'no poles': check the condition.")
         if res_note_cond:
