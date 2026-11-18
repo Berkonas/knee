@@ -87,5 +87,8 @@ def test_force_plate_only_applied_during_analysed_stance(tmp_path):
     s = AnalysisSettings(load_mode="measured", side="right", scale_method="points", scale_m_per_px=truth.scale_m_per_px)
     res = analysis.analyse(pose, 70, 1.75, s, forces=load_force_csv(tmp_path / "f.csv"))
     ts = res.timeseries
-    assert (ts.loc[ts.right_stance == 0, "grf_vertical_n"] == 0).all()
+    # force is applied only during (a 3-frame widened) stance of the analysed foot
+    from scipy.ndimage import binary_dilation
+    near = binary_dilation(ts.right_stance.to_numpy().astype(bool), iterations=3)
+    assert (ts.loc[~near, "grf_vertical_n"] == 0).all()
     assert any("another foot" in n for n in res.notes)

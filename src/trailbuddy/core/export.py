@@ -37,7 +37,7 @@ def export_project(project, out_dir: str | Path, baseline: str = "C0",
     files: dict[str, Path] = {}
     files["long_csv"] = out / "all_metrics_long.csv"
     long.to_csv(files["long_csv"], index=False, float_format="%.6g")
-    wide = long.pivot_table(index=["trial_id", "participant", "condition", "trial"], columns="metric",
+    wide = long.pivot_table(index=["trial_id", "participant", "task", "condition", "trial"], columns="metric",
                             values="value").reset_index()
     files["wide_csv"] = out / "trials_by_metric.csv"
     wide.to_csv(files["wide_csv"], index=False, float_format="%.6g")

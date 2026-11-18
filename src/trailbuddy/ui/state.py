@@ -24,6 +24,16 @@ class AppState(QObject):
         super().__init__()
         self.project: Project | None = None
         self.settings = app_settings()
+        self.busy = False      # an analysis job is running: trial edits that would misfile its results wait
+        self.workers: list = []  # keep Python references until each job's thread ends
+
+    def refuse_if_busy(self, parent) -> bool:
+        if self.busy:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.information(parent, "Analysis running",
+                                    "Wait for the running analysis to finish (or cancel it) before changing trials.")
+            return True
+        return False
 
     def set_project(self, p: Project | None) -> None:
         self.project = p

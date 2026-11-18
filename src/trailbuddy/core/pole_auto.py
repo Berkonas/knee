@@ -123,10 +123,18 @@ def detect_in_frame(frame: np.ndarray, wrist: np.ndarray, body_h: float, exclude
         if method == "edges":
             conf *= 0.6
         tip = wrist + u * tip_r
+        # A shaft that ends at the search window or image border is cut off, not finished: its true end is
+        # unknown, so the dark-tip extension would be a guess. Report no tip for that frame.
+        end_full = tip
+        if (end_full[1] >= y1 - 3 or end_full[0] <= x0 + 2 or end_full[0] >= x1 - 3
+                or not (0 <= end_full[0] < w and 0 <= end_full[1] < h)):
+            continue
         if FERRULE_FRACTION is None:
             tip = _extend_through_ferrule(frame, tip, u, body_h)
         else:  # geometric prior: the dark tip section adds a fixed fraction of the coloured hand-to-shaft-end length
             tip = wrist + u * tip_r * (1 + FERRULE_FRACTION)
+        if not (0 <= tip[0] < w and 0 <= tip[1] < h):
+            continue
         best = (tip, ang, float(np.linalg.norm(tip - wrist)), conf, method)
     return best
 
@@ -195,6 +203,8 @@ def track_poles(video: str, pose: PoseSeries, frame0: int = 0, colour: PoleColou
             raise Cancelled()
         xy = pose.xy[k]
         ok = np.isfinite(xy[[11, 12, 23, 24, 27, 28]]).all(axis=1)
+        if ok.sum() < 4:  # no usable body this frame: forget the angle gate so re-acquisition is not blocked
+            prev_ang = {"left": None, "right": None}
         if ok.sum() >= 4:
             top = np.nanmin(xy[[0, 11, 12], 1])
             bottom = np.nanmax(xy[[27, 28, 29, 30, 31, 32], 1])

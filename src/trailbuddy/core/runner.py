@@ -271,7 +271,7 @@ def run_pair(project, trial, settings: AnalysisSettings, proc: dict | None = Non
                   "front_step_width_ratio_mean", "front_pole_tip_spread_mean"):
             from .metrics import MetricValue
             res.metrics.append(MetricValue(k, None, "unavailable", "No front-view recording for this trial.", view="front"))
-    if not part.metrics_entered:
+    if part.body_mass_kg is None:  # a missing height only removes the height-based scale (handled in analysis)
         block_unsupported_kinetics(res)
     res.quality["sync_offset_s"] = off if (side_data and front_data) else None
     res.quality["processing"] = {"pose": (proc or {}).get("backend", "rtmpose"), "mode": (proc or {}).get("mode", "accurate"),
@@ -288,7 +288,7 @@ def run_pair(project, trial, settings: AnalysisSettings, proc: dict | None = Non
     return res
 
 
-KINETIC_COLUMN_TOKENS = ("moment", "force", "power", "impulse", "quad", "support", "grf")
+KINETIC_COLUMN_TOKENS = ("moment", "force", "power", "impulse", "quad", "support", "grf", "pole_vertical")
 
 
 def block_unsupported_kinetics(res) -> None:
@@ -297,7 +297,7 @@ def block_unsupported_kinetics(res) -> None:
     Every such metric becomes 'unavailable' with the reason, and the corresponding time series are removed."""
     from .metrics import MetricValue
 
-    why = "Needs this participant's measured body mass and height (Body metrics…)."
+    why = "Needs this participant's measured body mass (Participant information…)."
     out = []
     for m in res.metrics:
         if m.kind in ("model", "scenario") or m.key in ("speed", "knee_ext_impulse_per_m"):

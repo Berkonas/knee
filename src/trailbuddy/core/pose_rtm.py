@@ -118,20 +118,26 @@ def select_target(kps: np.ndarray, scores: np.ndarray, prev: dict | None, img_w:
             continue
         b = _bbox(k[good])
         h = b[3] - b[1]
-        hip = np.nanmean(k[[11, 12]], axis=0)
+        hips = [j for j in (11, 12) if s[j] > 0.3]
+        if not hips or float(np.mean(s)) < 0.3:   # no reliable hip or a garbled skeleton: not a candidate
+            continue
+        hip = np.mean(k[hips], axis=0)
         if prev is None:
             cand.append((h * float(np.mean(s)), i))
         else:
+            gap = max(1, prev.get("frames_since", 1))
             d = np.linalg.norm(hip - prev["hip"]) / max(prev["h"], 1)
             dh = abs(h - prev["h"]) / max(prev["h"], 1)
-            if d < 0.6 and dh < 0.5:  # plausible frame-to-frame motion of the same person
+            # the hips move < ~0.25 body heights per frame; the allowance grows with the frames since last seen
+            if d < min(0.25 * gap, 1.5) and dh < 0.5:
                 cand.append((-(d + dh), i))
     if not cand:
         return None
     return max(cand)[1]
 
 
-def crop_from_keypoints(k: np.ndarray, s: np.ndarray, pad: float = 1.25) -> list[float]:
+def crop_from_keypoints(k: np.ndarray, s: np.ndarray, pad: float = 1.25, img_w: int | None = None,
+                        img_h: int | None = None) -> list[float]:
     """Box around a skeleton (confident points), enlarged by ``pad``: the crop for the next frame."""
     good = s > 0.3
     pts = k[good] if good.sum() >= 4 else k
@@ -140,7 +146,10 @@ def crop_from_keypoints(k: np.ndarray, s: np.ndarray, pad: float = 1.25) -> list
     c = ((x0 + x1) / 2, (y0 + y1) / 2)
     w, h = (x1 - x0) * pad, (y1 - y0) * pad
     w = max(w, 0.4 * h)  # a side-on standing person is narrow; keep arms and poles in the crop
-    return [c[0] - w / 2, c[1] - h / 2, c[0] + w / 2, c[1] + h / 2]
+    box = [c[0] - w / 2, c[1] - h / 2, c[0] + w / 2, c[1] + h / 2]
+    if img_w and img_h:  # keep the crop inside the image
+        box = [max(0.0, box[0]), max(0.0, box[1]), min(float(img_w), box[2]), min(float(img_h), box[3])]
+    return box
 
 
 def estimate(video: str | Path, start_frame: int = 0, end_frame: int | None = None, mode: str = DEFAULT_MODE,
@@ -184,23 +193,31 @@ def estimate(video: str | Path, start_frame: int = 0, end_frame: int | None = No
             k, s = kps[0], sc[0]
             good = s > 0.3
             h = np.ptp(k[good][:, 1]) if good.sum() >= 4 else 0.0
-            if float(np.mean(s)) >= TRACK_MIN_SCORE and prev and abs(h - prev["h"]) / max(prev["h"], 1) < TRACK_MAX_SIZE_CHANGE:
+            hips = [q for q in (11, 12) if s[q] > 0.3]
+            moved = (np.linalg.norm(np.mean(k[hips], axis=0) - prev["hip"]) / max(prev["h"], 1)) if hips and prev else 9.0
+            if (float(np.mean(s)) >= TRACK_MIN_SCORE and prev and moved < 0.2
+                    and abs(h - prev["h"]) / max(prev["h"], 1) < TRACK_MAX_SIZE_CHANGE):
                 kps, sc, j = kps, sc, 0
                 nper[k_out] = 1
         if j is None:  # (re)detect: first frame, lost track, or uncertain tracked skeleton
             redetect[k_out] = True
             kps, sc = det(frame)
             nper[k_out] = len(kps)
-            j = select_target(kps, sc, prev if lost < 15 else None, info.width, info.height)
+            if prev is not None:
+                prev["frames_since"] = lost + 1
+            j = select_target(kps, sc, prev, info.width, info.height)  # keep the identity prior after long gaps
         if j is not None:
-            k, s = kps[j], sc[j]
-            crop = crop_from_keypoints(k, s)
+            k, s = kps[j], sc[j].copy()
+            outside = (k[:, 0] < 0) | (k[:, 1] < 0) | (k[:, 0] >= info.width) | (k[:, 1] >= info.height)
+            s[outside] = 0.0  # extrapolated beyond the image: not a measurement
+            crop = crop_from_keypoints(k, s, img_w=info.width, img_h=info.height)
             for h_i, m_i in HALPE_TO_MP.items():
                 xy[k_out, m_i] = k[h_i]
                 vis[k_out, m_i] = s[h_i]
             good = s > 0.3
             b = _bbox(k[good]) if good.sum() >= 2 else _bbox(k)
-            prev = {"hip": np.nanmean(k[[11, 12]], axis=0), "h": b[3] - b[1]}
+            hips = [q for q in (11, 12) if s[q] > 0.3] or [11, 12]
+            prev = {"hip": np.mean(k[hips], axis=0), "h": b[3] - b[1], "frames_since": 1}
             lost = 0
         else:
             lost += 1

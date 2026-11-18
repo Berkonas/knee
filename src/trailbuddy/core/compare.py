@@ -22,24 +22,27 @@ def collect(project) -> pd.DataFrame:
     rows = []
     for tr in project.trials:
         d = project.root / "trials" / tr.id
-        if not (d / "summary.csv").exists():
+        if tr.status != "analysed" or not (d / "summary.csv").exists():  # e.g. condition changed since analysis
             continue
         s = pd.read_csv(d / "summary.csv")
         cond = project.condition(tr.condition_code)
         for _, r in s.iterrows():
             rows.append({"trial_id": tr.id, "participant": tr.participant_id, "condition": tr.condition_code,
+                         "task": tr.task,
                          "condition_label": cond.label, "trial": tr.trial_number,
                          "pole_length_cm": tr.pole_length_cm, "metric": r["key"], "label": r["label"],
                          "unit": r["unit"], "evidence": r["evidence"], "value": r["value"]})
-    return pd.DataFrame(rows, columns=["trial_id", "participant", "condition", "condition_label", "trial",
+    return pd.DataFrame(rows, columns=["trial_id", "participant", "condition", "task", "condition_label", "trial",
                                        "pole_length_cm", "metric", "label", "unit", "evidence", "value"])
 
 
 def per_participant(long: pd.DataFrame, metric: str) -> pd.DataFrame:
     d = long[(long.metric == metric)].dropna(subset=["value"])
+    if "task" not in d:
+        d = d.assign(task="stair_descent")
     if d.empty:
-        return pd.DataFrame(columns=["participant", "condition", "mean", "sd", "n", "cv_pct"])
-    g = d.groupby(["participant", "condition"])["value"]
+        return pd.DataFrame(columns=["participant", "task", "condition", "mean", "sd", "n", "cv_pct"])
+    g = d.groupby(["participant", "task", "condition"])["value"]  # terrains are never pooled
     out = g.agg(["mean", "std", "count"]).reset_index().rename(columns={"std": "sd", "count": "n"})
     out["cv_pct"] = 100 * out["sd"] / out["mean"].abs()
     return out
@@ -49,7 +52,7 @@ def within_participant(long: pd.DataFrame, metric: str, baseline: str = "C0") ->
     """Per participant: each condition vs the baseline condition."""
     pp = per_participant(long, metric)
     rows = []
-    for pid, g in pp.groupby("participant"):
+    for (pid, task), g in pp.groupby(["participant", "task"]):
         base = g[g.condition == baseline]
         if base.empty:
             continue
@@ -58,7 +61,7 @@ def within_participant(long: pd.DataFrame, metric: str, baseline: str = "C0") ->
             if r.condition == baseline:
                 continue
             diff = r["mean"] - b
-            rows.append({"participant": pid, "condition": r.condition, "baseline": baseline,
+            rows.append({"participant": pid, "task": task, "condition": r.condition, "baseline": baseline,
                          "baseline_mean": b, "condition_mean": r["mean"], "abs_diff": diff,
                          "pct_diff": 100 * diff / abs(b) if b != 0 else np.nan,
                          "n_baseline": int(base["n"].iloc[0]), "n_condition": int(r["n"]),
@@ -70,7 +73,7 @@ def group_summary(long: pd.DataFrame, metric: str, baseline: str = "C0") -> pd.D
     w = within_participant(long, metric, baseline)
     if w.empty:
         return pd.DataFrame()
-    g = w.groupby("condition")
+    g = w.groupby(["task", "condition"])
     out = pd.DataFrame({
         "n_participants": g.size(),
         "mean_pct_diff": g["pct_diff"].mean(),
@@ -132,7 +135,7 @@ def change_table(long: pd.DataFrame, baseline: str = "C0", metrics: list[str] | 
         pp = per_participant(long, m)
         if pp.empty:
             continue
-        for pid, g in pp.groupby("participant"):
+        for (pid, task), g in pp.groupby(["participant", "task"]):
             b = g[g.condition == baseline]
             if b.empty:
                 continue
@@ -146,11 +149,11 @@ def change_table(long: pd.DataFrame, baseline: str = "C0", metrics: list[str] | 
                 else:
                     noise = np.nan
                 rows.append({"metric": m, "label": INFO[m].label, "unit": INFO[m].unit, "participant": pid,
-                             "condition": r.condition, "baseline": baseline, "baseline_mean": bm,
+                             "task": task, "condition": r.condition, "baseline": baseline, "baseline_mean": bm,
                              "condition_mean": r.mean, "abs_diff": diff,
                              "pct_diff": 100 * diff / abs(bm) if bm else np.nan,
                              "noise_95": noise, "clear": bool(np.isfinite(noise) and abs(diff) > noise),
                              "n_baseline": bn, "n_condition": int(r.n)})
-    return pd.DataFrame(rows, columns=["metric", "label", "unit", "participant", "condition", "baseline",
+    return pd.DataFrame(rows, columns=["metric", "label", "unit", "participant", "task", "condition", "baseline",
                                        "baseline_mean", "condition_mean", "abs_diff", "pct_diff", "noise_95",
                                        "clear", "n_baseline", "n_condition"])

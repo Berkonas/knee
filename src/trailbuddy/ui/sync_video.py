@@ -177,7 +177,7 @@ class ViewSource:
         for side, tr in self.poles.items():
             j = int(np.argmin(np.abs(tr.t - t_view)))
             if abs(tr.t[j] - t_view) < 1.5 / max(self.pose.fps, 1) and np.isfinite(tr.tip[j]).all():
-                hand = xy[15 if side == "left" else 16]
+                hand = self.pose.xy[k, 15 if side == "left" else 16]  # raw wrist: the display filter may hide it
                 poles.append((hand, tr.tip[j], float(tr.confidence[j])))
         lo = max(0, k - int(self.pose.fps * 0.6))
         trail = [(src_xy[lo:k + 1, 25], QColor(89, 208, 190, 150)), (src_xy[lo:k + 1, 26], QColor(255, 179, 71, 150)),
@@ -229,6 +229,7 @@ class SyncVideoPanel(QWidget):
             b = QToolButton()
             b.setText(text)
             b.setToolTip(tip)
+            b.setAccessibleName(tip.split(" (")[0])  # screen readers announce the action, not the glyph
             b.setCheckable(check)
             b.clicked.connect(fn)
             bar.addWidget(b)

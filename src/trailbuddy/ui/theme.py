@@ -12,12 +12,14 @@ TOKENS = {
         "ink": "#1C2726", "muted": "#61706D", "faint": "#93A09D", "accent": "#1F6F66", "accent_hover": "#185A53",
         "accent_soft": "#DCEDEA", "sidebar": "#E9EDEC", "sidebar_sel": "#D3E3E0", "warn": "#9A5B0B",
         "error": "#B3261E", "video_bg": "#101716", "selection": "#CFE5E1",
+        "on_accent": "#FFFFFF", "warn_bg": "#F7E9D2", "warn_ink": "#6B4105",
     },
     "dark": {
         "bg": "#1B1F1F", "surface": "#242A29", "surface2": "#2B3231", "line": "#37403E", "line_strong": "#4A5553",
         "ink": "#E6ECEB", "muted": "#9AA8A5", "faint": "#6F7C79", "accent": "#4DB3A6", "accent_hover": "#63C4B7",
         "accent_soft": "#23403C", "sidebar": "#202625", "sidebar_sel": "#2F4542", "warn": "#E2A54A",
         "error": "#F2867E", "video_bg": "#0B0F0F", "selection": "#2F4542",
+        "on_accent": "#0E1A18", "warn_bg": "#3A2C14", "warn_ink": "#F0C27A",
     },
 }
 
@@ -74,7 +76,7 @@ QLabel#pageHint, QLabel#muted {{ color: {t['muted']}; }}
 QLabel#sectionTitle, QLabel#groupTitle {{ font-size: 13px; font-weight: 600; padding-top: 6px; }}
 QLabel#cardTitle {{ font-size: 13px; font-weight: 600; }}
 QLabel#warn {{ color: {t['warn']}; }}
-QLabel#warnBanner {{ background: #F7E9D2; color: #6B4105; border-radius: 8px; padding: 8px 12px; }}
+QLabel#warnBanner {{ background: {t['warn_bg']}; color: {t['warn_ink']}; border-radius: 8px; padding: 8px 12px; }}
 QLabel#error {{ color: {t['error']}; }}
 QLabel#value {{ font-size: 15px; font-weight: 600; }}
 QLabel#bigValue {{ font-size: 22px; font-weight: 600; }}
@@ -88,7 +90,7 @@ QPushButton:hover {{ border-color: {t['accent']}; }}
 QPushButton:pressed {{ background: {t['surface2']}; }}
 QPushButton:disabled {{ color: {t['faint']}; border-color: {t['line']}; background: {t['surface2']}; }}
 QPushButton:checked {{ background: {t['accent_soft']}; border-color: {t['accent']}; }}
-QPushButton#primary {{ background: {t['accent']}; color: #FFFFFF; border: 1px solid {t['accent']}; font-weight: 600; }}
+QPushButton#primary {{ background: {t['accent']}; color: {t['on_accent']}; border: 1px solid {t['accent']}; font-weight: 600; }}
 QPushButton#primary:hover {{ background: {t['accent_hover']}; }}
 QPushButton#primary:disabled {{ background: {t['line_strong']}; border-color: {t['line_strong']}; color: {t['surface']}; }}
 QToolButton {{ background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 4px 8px; }}
@@ -126,7 +128,7 @@ QLabel#reportTitle {{ font-size: 17px; font-weight: 600; }}
 QFrame#step {{ background: {t['surface']}; border: 1px solid {t['line']}; border-radius: 10px; }}
 QPushButton#stepHeader {{ background: transparent; border: none; text-align: left; padding: 0; }}
 QLabel#stepBadge {{ background: {t['surface2']}; border-radius: 12px; font-weight: 600; font-size: 12px; }}
-QLabel#stepBadge[done="true"] {{ background: {t['accent']}; color: #FFFFFF; }}
+QLabel#stepBadge[done="true"] {{ background: {t['accent']}; color: {t['on_accent']}; }}
 QLabel#stepTitle {{ font-weight: 600; }}
 QLabel#stepStatus {{ color: {t['muted']}; font-size: 12px; }}
 QListWidget#nav {{ background: transparent; border: none; }}

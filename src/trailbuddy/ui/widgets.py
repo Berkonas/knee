@@ -69,6 +69,34 @@ def evidence_badge(kind: str) -> QLabel:
     return lab
 
 
+def theme_figure(fig) -> None:
+    """Recolour a matplotlib figure for the current app theme (on screen only; exports stay print-ready)."""
+    from .theme import mode, tok
+    if mode() != "dark":
+        return
+    bg, surf, ink, muted, line = tok("bg"), tok("surface"), tok("ink"), tok("muted"), tok("line_strong")
+    fig.patch.set_facecolor(bg)
+    for ax in fig.axes:
+        ax.set_facecolor(surf)
+        for sp in ax.spines.values():
+            sp.set_color(line)
+        ax.tick_params(colors=muted, which="both")
+        for lab in (ax.xaxis.label, ax.yaxis.label, ax.title):
+            lab.set_color(ink)
+        for txt in ax.texts:
+            if txt.get_color() in ("black", "#000000", "k", (0, 0, 0, 1)):
+                txt.set_color(ink)
+        leg = ax.get_legend()
+        if leg is not None:
+            leg.get_frame().set_facecolor(surf)
+            for txt in leg.get_texts():
+                txt.set_color(ink)
+            if leg.get_title() is not None:
+                leg.get_title().set_color(ink)
+    for txt in fig.texts:
+        txt.set_color(ink)
+
+
 class MplCanvas(FigureCanvasQTAgg):
     """Holds one matplotlib Figure; swap figures with set_figure."""
 
@@ -80,6 +108,7 @@ class MplCanvas(FigureCanvasQTAgg):
         self.setMinimumHeight(240)
 
     def set_figure(self, fig) -> None:
+        theme_figure(fig)
         self.figure = fig
         fig.set_canvas(self)
         self.draw_idle()

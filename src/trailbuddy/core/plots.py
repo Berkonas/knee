@@ -203,7 +203,9 @@ def tradeoff_table(long: pd.DataFrame, baseline: str = "C0", knee_metric: str = 
     A no-pole baseline has no pole-induced arm moment, so its arm value is taken as 0. Repetition SDs give the
     error bars. Rows: participant, condition, knee_pct, knee_pct_sd, arm_delta, arm_sd, n."""
     rows = []
-    for pid, g in long.groupby("participant"):
+    if "task" not in long:
+        long = long.assign(task="stair_descent")
+    for (pid, task), g in long.groupby(["participant", "task"]):  # terrains are never pooled
         kb = g[(g.metric == knee_metric) & (g.condition == baseline)]["value"].dropna()
         if kb.empty or kb.mean() == 0:
             continue
@@ -214,11 +216,11 @@ def tradeoff_table(long: pd.DataFrame, baseline: str = "C0", knee_metric: str = 
             a = gc[gc.metric == arm_metric]["value"].dropna()
             if k.empty:
                 continue
-            rows.append({"participant": pid, "condition": cond, "knee_pct": 100 * (k.mean() - kb.mean()) / kb.mean(),
+            rows.append({"participant": pid, "task": task, "condition": cond, "knee_pct": 100 * (k.mean() - kb.mean()) / kb.mean(),
                          "knee_pct_sd": 100 * k.std(ddof=1) / kb.mean() if len(k) > 1 else np.nan,
                          "arm_delta": (a.mean() if len(a) else 0.0) - ab_m,
                          "arm_sd": a.std(ddof=1) if len(a) > 1 else np.nan, "n": len(k)})
-    return pd.DataFrame(rows, columns=["participant", "condition", "knee_pct", "knee_pct_sd", "arm_delta", "arm_sd", "n"])
+    return pd.DataFrame(rows, columns=["participant", "task", "condition", "knee_pct", "knee_pct_sd", "arm_delta", "arm_sd", "n"])
 
 
 def fig_tradeoff_paired(long: pd.DataFrame, baseline: str = "C0") -> Figure:

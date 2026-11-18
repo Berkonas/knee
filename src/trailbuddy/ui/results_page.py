@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (QComboBox, QFileDialog, QHBoxLayout, QLabel, QPus
 
 from ..core import compare, export, plots
 from ..core.metrics import INFO
+from ..core.project import TASKS
 from .components import Segmented
 from .project_page import table
 from .result_view import fmt
@@ -65,6 +66,13 @@ class ResultsPage(QWidget):
         row.addWidget(QLabel("Baseline"))
         self.baseline = QComboBox()
         row.addWidget(self.baseline)
+        row.addWidget(QLabel("Terrain"))
+        self.terrain = QComboBox()
+        self.terrain.addItem("All terrains", None)
+        for k, lab in TASKS.items():
+            self.terrain.addItem(lab, k)
+        self.terrain.setToolTip("Compare conditions within one terrain (recommended): flat, ramp or stairs")
+        row.addWidget(self.terrain)
         row.addStretch(1)
         self.btn_savefig = QPushButton("Save figure…")
         self.btn_savefig.clicked.connect(lambda: self.canvas.save_dialog(self, f"{VIEWS[self.view.index()].lower()}.png"))
@@ -87,6 +95,7 @@ class ResultsPage(QWidget):
         lay.addWidget(split, 1)
         self.metric_box.currentIndexChanged.connect(self.update_views)
         self.baseline.currentIndexChanged.connect(self.update_views)
+        self.terrain.currentIndexChanged.connect(self.refresh)
         state.resultsChanged.connect(self.refresh)
         state.projectChanged.connect(self.refresh)
         self.refresh()
@@ -104,6 +113,9 @@ class ResultsPage(QWidget):
             self.baseline.setCurrentIndex(max(0, i))
         self.baseline.blockSignals(False)
         self.long = compare.collect(p) if p else None
+        task = self.terrain.currentData()
+        if self.long is not None and task:
+            self.long = self.long[self.long.task == task]
         has = self.long is not None and not self.long.empty
         self.btn_export.setEnabled(has)
         self.btn_savefig.setEnabled(has)

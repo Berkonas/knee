@@ -155,7 +155,7 @@ class AnalysisForm(QObject):
         f.addRow("Support force", self.support)
         self.grf_dir = QComboBox()
         self.grf_dir.addItem("Toward body centre of mass", "com")
-        self.grf_dir.addItem("Vertical (upper bound)", "vertical")
+        self.grf_dir.addItem("Vertical (alternative assumption)", "vertical")
         self.grf_dir.setToolTip("Direction of the assumed foot force in video-only trials")
         f.addRow("Foot force direction", self.grf_dir)
         self.cop = dspin(0, 1, 0.5, 0.05, 2, "", "Assumed centre of pressure: 0 = heel, 1 = toes")

@@ -66,6 +66,7 @@ class MainWindow(QMainWindow):
         self.state.openTrial.connect(self._open_trial)
         self.pages["workspace"].browser.importRequested.connect(self.import_recordings)
         self.pages["biomech"].seekRequested.connect(self._seek_video)
+        self.pages["biomech"].editBody.connect(self.pages["workspace"]._edit_body_pid)
         self._reduce_motion = self.reduce_motion()
         self._menus()
         self.statusBar().showMessage("Ready. Open or create a study, then import recordings.")
@@ -110,6 +111,7 @@ class MainWindow(QMainWindow):
         rm.toggled.connect(lambda on: (setattr(self, "_reduce_motion", on), self.state.settings.setValue("reduce_motion", on)))
         v.addAction(rm)
         pb = mb.addMenu("&Playback")
+        self.playback_actions = []
         ws = self.pages["workspace"]
         for text, key, fn in (("Play / pause", "Space", ws.video.toggle_play),
                               ("Previous frame", "Left", lambda: ws.video.step(-1)),
@@ -121,6 +123,7 @@ class MainWindow(QMainWindow):
             a.setShortcutContext(Qt.ShortcutContext.WindowShortcut)
             a.triggered.connect(fn)
             pb.addAction(a)
+            self.playback_actions.append(a)
         h = mb.addMenu("&Help")
         a = QAction(f"About {APP_NAME}", self)
         a.triggered.connect(self._about)
@@ -145,6 +148,8 @@ class MainWindow(QMainWindow):
     def _switch_mode(self, i: int):
         """Short cross-fade into the new page (160 ms); instant when reduced motion is preferred."""
         self.stack.setCurrentIndex(i)
+        for a in getattr(self, "playback_actions", []):  # Space/arrows drive the video only on Analyse
+            a.setEnabled(MODES[i][1] == "workspace")
         if self._reduce_motion:
             return
         from PySide6.QtCore import QEasingCurve, QPropertyAnimation

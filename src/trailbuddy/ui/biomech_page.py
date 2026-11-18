@@ -135,6 +135,7 @@ class FreeBodyView(QWidget):
 
 class BiomechanicsPage(QWidget):
     seekRequested = Signal(float)
+    editBody = Signal(str)
 
     def __init__(self, state):
         super().__init__()
@@ -157,7 +158,13 @@ class BiomechanicsPage(QWidget):
         self.warn.setObjectName("warnBanner")
         self.warn.setWordWrap(True)
         self.warn.hide()
-        lay.addWidget(self.warn)
+        wrow = QHBoxLayout()
+        wrow.addWidget(self.warn, 1)
+        self.btn_body = QPushButton("Enter body metrics…")
+        self.btn_body.hide()
+        self.btn_body.clicked.connect(lambda: self.trial and self.editBody.emit(self.trial.participant_id))
+        wrow.addWidget(self.btn_body, 0, Qt.AlignmentFlag.AlignTop)
+        lay.addLayout(wrow)
 
         split = QSplitter(Qt.Orientation.Horizontal)
         left = QWidget()
@@ -206,7 +213,8 @@ class BiomechanicsPage(QWidget):
         for c in (1, 2, 3):
             hh.setSectionResizeMode(c, QHeaderView.ResizeMode.ResizeToContents)
         self.table.setWordWrap(False)
-        rv.addWidget(self.table, 2)
+        self.table.setMinimumHeight(200)
+        rv.addWidget(self.table, 3)
         cap2 = QLabel("Assumptions")
         cap2.setObjectName("cardTitle")
         rv.addWidget(cap2)
@@ -220,9 +228,10 @@ class BiomechanicsPage(QWidget):
         self.cop.setToolTip("Centre of pressure along the foot: 0 = heel, 1 = toes")
         self.gdir = QComboBox()
         self.gdir.addItem("Toward body centre of mass", "com")
-        self.gdir.addItem("Vertical (upper bound)", "vertical")
+        self.gdir.addItem("Vertical (alternative assumption)", "vertical")
         self.arm = QDoubleSpinBox(); self.arm.setRange(2, 8); self.arm.setSuffix(" cm"); self.arm.setDecimals(1)
         f.addRow("Mode", self.mode)
+        self.mode.currentIndexChanged.connect(self._mode_changed)
         f.addRow("Pole force", self.pole_pct)
         f.addRow("Centre of pressure", self.cop)
         f.addRow("Foot force direction", self.gdir)
@@ -297,9 +306,19 @@ class BiomechanicsPage(QWidget):
             msg.append("This trial has not been analysed yet.")
         self.warn.setText("  ".join(msg))
         self.warn.setVisible(bool(msg))
+        self.btn_body.setVisible(bool(missing))
+        video_only = s.get("load_mode", "video") == "video"
+        for w in (self.pole_pct, self.cop, self.gdir, self.arm):
+            w.setEnabled(not video_only)
+
         self._fill_table()
         self._fill_plot()
         self._fill_equations(part)
+
+    def _mode_changed(self, *_):
+        on = self.mode.currentData() != "video"
+        for w in (self.pole_pct, self.cop, self.gdir, self.arm):
+            w.setEnabled(on)
 
     def _fill_table(self):
         self.table.setRowCount(0)
@@ -310,7 +329,7 @@ class BiomechanicsPage(QWidget):
         for r, m in enumerate(rows):
             info = INFO[m.key]
             rng = f"{fmt(m.low)}–{fmt(m.high)}" if m.low is not None and m.high is not None else ""
-            items = [info.label, "–" if m.value is None else f"{fmt(m.value)} {info.unit}", rng, SHORT_KINDS[m.kind]]
+            items = [f"{info.label} ({info.unit})", "–" if m.value is None else fmt(m.value), rng, SHORT_KINDS[m.kind]]
             for c, txt in enumerate(items):
                 it = QTableWidgetItem(txt)
                 tip = f"{info.what}\nNot: {info.not_conclude}" + (f"\n\n{m.note}" if m.note else "")
@@ -335,6 +354,8 @@ class BiomechanicsPage(QWidget):
         if ts is None or len(ts) == 0:
             self.slider.setRange(0, 0)
             self.slider.blockSignals(False)
+            self.plot.hide()
+            self.btn_peak.setEnabled(False)
             self.fbd.set_frame({"message": "Not analysed yet."})
             self.plot_legend.setText("")
             return
@@ -360,6 +381,8 @@ class BiomechanicsPage(QWidget):
                 self.plot.addItem(reg)
         self.plot_legend.setText("   ".join(shown + ["▮ stance"]) if shown else
                                  "No load time series for this trial (see the message above).")
+        self.plot.setVisible(bool(shown))
+        self.btn_peak.setEnabled(bool(shown))
         self.slider.setRange(0, len(t) - 1)
         self.slider.blockSignals(False)
         self._go_peak()
@@ -450,7 +473,7 @@ class BiomechanicsPage(QWidget):
 
     # ---- recalculation --------------------------------------------------------------------------
     def recalculate(self):
-        if self.trial is None or self.state.project is None:
+        if self.trial is None or self.state.project is None or self.state.refuse_if_busy(self):
             return
         from ..core.runner import run_pair
 
@@ -473,15 +496,19 @@ class BiomechanicsPage(QWidget):
                                                                     cancelled))
         self.worker.finished.connect(self._done)
         self.worker.failed.connect(self._failed)
+        self.state.busy = True
+        self.state.workers.append(self.worker)
         self.thread = start_worker(self, self.worker)
 
     def _done(self, _res):
+        self.state.busy = False
         self.btn_apply.setEnabled(True)
         self.btn_apply.setText("Recalculate loads")
         self.state.save()
         self.state.resultsChanged.emit()
 
     def _failed(self, msg):
+        self.state.busy = False
         self.btn_apply.setEnabled(True)
         self.btn_apply.setText("Recalculate loads")
         error_box(self, "Recalculation failed", msg)

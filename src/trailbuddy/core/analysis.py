@@ -40,7 +40,7 @@ class AnalysisSettings:
     contact_min_duration_s: float = 0.12
     support_model: str = "static"         # 'static' (m*g) | 'dynamic' (m*(g+a_COM))
     cop_fraction: float = 0.5             # assumed COP position heel(0) -> toe(1)
-    grf_direction: str = "com"            # 'com' (COP -> whole-body COM) | 'vertical' (upper bound)
+    grf_direction: str = "com"            # 'com' (COP -> whole-body COM) | 'vertical' (alternative assumption)
     # Mode A 'video': kinematics only, no forces or moments.  Mode B 'scenario': assumption-based loads.
     # Mode C 'measured': loads from imported force data (force plate, insoles, pole load cells).
     load_mode: str = "video"
@@ -289,9 +289,13 @@ def analyse(pose: PoseSeries, body_mass: float | None, height_m: float | None, s
     if pl.source != "none":
         ts["pole_vertical_total_n"] = pole_vert
         kind = "measured" if pl.source == "measured" else "scenario"
+        if kind == "measured" and (set(pl.axial_n) - set(pole_dirs)):
+            kind = "model"  # measured axial force, but a pole direction assumed vertical -> not a pure measurement
         frac = 100 * pole_vert[stance].mean() / (body_mass * G) if stance.any() else None
         M.append(MetricValue("pole_support_fraction", frac, kind,
-                             "" if kind == "measured" else f"{s.pole_pct_bw:g}% BW per planted pole (assumed)"))
+                             "" if pl.source == "measured" and kind == "measured" else
+                             ("measured axial force; pole direction assumed vertical for an untracked pole"
+                              if pl.source == "measured" else f"{s.pole_pct_bw:g}% BW per planted pole (assumed)")))
     else:
         why = (kin_block if uses_poles and kin_block else
                "No pole columns in the force file." if uses_poles and pole_mode == "measured" else
@@ -323,8 +327,15 @@ def analyse(pose: PoseSeries, body_mass: float | None, height_m: float | None, s
         if (loaded & ~stance).sum() > 0.2 * max(1, loaded.sum()):
             notes.append(f"Force data show load outside the {side} foot's stance: another foot may be on the plate. "
                          f"Only force during the {side} stance is applied to the {side} leg.")
-        fv = np.where(stance, fv, 0.0)
-        fh = np.where(stance, fh, 0.0)
+        # the plate's own contact decides when force acts; the video stance (widened by 3 frames, since video foot
+        # strike can lag the plate by a frame or two) only decides which leg receives it
+        from scipy.ndimage import binary_dilation
+        apply = loaded & binary_dilation(stance, iterations=3)
+        fv = np.where(apply, fv, 0.0)
+        fh = np.where(apply, fh, 0.0)
+        if "horizontal" not in fdat:
+            notes.append("Force file has no horizontal force (fx_n): the ground reaction force is assumed vertical "
+                         "in the inverse dynamics.")
         if "cop_x" in fdat and s.plate_origin_x_m is not None:
             foot_y = dyn.cop_on_foot(kin, side, 0.5)[:, 1]
             plate_y = np.nanmedian(foot_y[loaded & stance]) if (loaded & stance).any() else np.nanmedian(foot_y)
@@ -355,7 +366,7 @@ def analyse(pose: PoseSeries, body_mass: float | None, height_m: float | None, s
         notes.append("No measured ground reaction force: knee moment from the quasi-static scenario "
                      f"model (support = {'m(g+a_COM)' if s.support_model == 'dynamic' else 'body weight'}, "
                      f"COP at {s.cop_fraction:.2f} of heel-to-toe, force directed "
-                     f"{'from the COP toward the whole-body COM' if s.grf_direction == 'com' else 'vertically (upper bound)'}, "
+                     f"{'from the COP toward the whole-body COM' if s.grf_direction == 'com' else 'vertically (alternative assumption)'}, "
                      "segment inertia neglected).")
 
     sens_rows = []
@@ -428,12 +439,13 @@ def analyse(pose: PoseSeries, body_mass: float | None, height_m: float | None, s
                                                                 com_all if gdir == "com" else None), np.nan)
                     if np.isfinite(mk[stance]).mean() < 0.8:
                         continue
+                    pk_s = _peak(mk)  # stance-only peak, same definition as the nominal value
                     mk = np.nan_to_num(mk)
                     for r in (s.moment_arm_range_m[0], s.moment_arm_m, s.moment_arm_range_m[1]):
                         sens_rows.append({"support_model": supp, "grf_direction": gdir, "cop_fraction": copf,
                                           "pole_force_pct_bw": ps * s.pole_pct_bw if pl.source == "scenario" else None,
                                           "moment_arm_m": r,
-                                          "peak_knee_moment_nm_per_kg": float(np.nanmax(mk)) / body_mass,
+                                          "peak_knee_moment_nm_per_kg": pk_s / body_mass,
                                           "peak_quad_force_n": float(dyn.quadriceps_force(mk, r).max()),
                                           "knee_impulse_nms_per_kg": dyn.integrate(np.maximum(mk, 0), t) / body_mass})
             if sens_rows:
@@ -450,13 +462,14 @@ def analyse(pose: PoseSeries, body_mass: float | None, height_m: float | None, s
         if "reason_override" in locals():
             reason = reason_override
         for key in ("knee_ext_moment_peak", "knee_ext_moment_peak_nm", "quad_force_peak", "quad_force_peak_bw",
-                    "knee_ext_impulse_total", "knee_ext_impulse_per_m", "knee_neg_work", "knee_power_absorption_peak"):
+                    "knee_ext_impulse_total", "knee_ext_impulse_per_step", "knee_ext_impulse_per_m", "knee_neg_work", "knee_power_absorption_peak"):
             M.append(MetricValue(key, None, "unavailable", reason))
 
     # ---- upper-limb kinetics ----------------------------------------------------------------
     if pl.source != "none" and kin_block is None:
         el_pk, sh_pk = [], []
-        rng = {"el": [], "sh": []}
+        rng = {"el": {0.5: [], 1.5: []}, "sh": {0.5: [], 1.5: []}}
+        f_min = max(10.0, 0.02 * body_mass * G)  # below this the pole is not loaded (load-cell noise, swing)
         for pside, f in pl.axial_n.items():
             f_hand = pl.direction[pside] * f[:, None]
             am = dyn.arm_moments(kin, pside, body_mass, f_hand)
@@ -464,11 +477,11 @@ def analyse(pose: PoseSeries, body_mass: float | None, height_m: float | None, s
                 for k in (0.5, 1.5):
                     ak = dyn.arm_moments(kin, pside, body_mass, f_hand * k)
                     for arr, key in ((ak.elbow, "el"), (ak.shoulder, "sh")):
-                        v = np.abs(arr[f > 0])
+                        v = np.abs(arr[f > f_min])
                         v = v[np.isfinite(v)]
                         if v.size:
-                            rng[key].append(float(v.max()))
-            loaded = f > 0
+                            rng[key][k].append(float(v.max()))
+            loaded = f > f_min
             grip = dyn.grip_point(kin, pside)
             ts[f"pole_{pside}_force_x_n"] = np.where(loaded, f_hand[:, 0], np.nan)
             ts[f"pole_{pside}_force_y_n"] = np.where(loaded, f_hand[:, 1], np.nan)
@@ -487,9 +500,10 @@ def analyse(pose: PoseSeries, body_mass: float | None, height_m: float | None, s
         kind = "model" if pl.source == "measured" else "scenario"
         for key, pk_list, rk in (("elbow_moment_peak", el_pk, "el"), ("shoulder_moment_peak", sh_pk, "sh")):
             val = max(pk_list) if pk_list else None
-            lo = min(rng[rk]) if rng[rk] else None
-            hi = max(rng[rk]) if rng[rk] else None
-            note = "absolute value; quasi-static" + ("; range = pole force ±50 %" if rng[rk] else "")
+            # peak across poles at each pole-force scale (not mixing one pole's low with the other's high)
+            lo = max(rng[rk][0.5]) if rng[rk][0.5] else None
+            hi = max(rng[rk][1.5]) if rng[rk][1.5] else None
+            note = "absolute value; quasi-static" + ("; range = pole force ±50 %" if lo is not None else "")
             k_ = kind if pk_list else "unavailable"
             M.append(MetricValue(key, val, k_, note, low=lo, high=hi))
             M.append(MetricValue(f"{key}_per_kg", val / body_mass if val is not None else None, k_, note,

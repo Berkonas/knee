@@ -72,6 +72,7 @@ class ExperimentBrowser(QWidget):
         lay.addWidget(self.btn_import)
         self.legend = QLabel("● analysed  ○ to do  ⚠ check pairing")
         self.legend.setObjectName("muted")
+        self.legend.setWordWrap(True)
         lay.addWidget(self.legend)
         state.projectChanged.connect(self.refresh)
         state.trialsChanged.connect(self.refresh)
@@ -106,20 +107,24 @@ class ExperimentBrowser(QWidget):
             trials = [t for t in p.trials if t.participant_id == part.id and self._match(t, text, flt)]
             if not trials and (text or flt != "all"):
                 continue
-            pi = QTreeWidgetItem([f"{part.id}  ·  {len(trials)} trials" + ("" if part.metrics_entered else "  ·  !")])
+            pi = QTreeWidgetItem([f"{part.id}  ·  {len(trials)} trials" + ("" if part.metrics_entered else
+                                                                          "  ·  metrics missing")])
             pi.setToolTip(0, f"{part.body_mass_kg:g} kg, {part.height_m:g} m" if part.metrics_entered else
-                          f"{' and '.join(part.missing()).capitalize()} not entered: right-click > Body metrics…")
+                          f"{' and '.join(part.missing()).capitalize()} not entered: right-click > "
+                          "Participant information…")
             pi.setData(0, Qt.ItemDataRole.UserRole, ("participant", part.id))
             f = pi.font(0)
             f.setBold(True)
             pi.setFont(0, f)
             self.tree.addTopLevelItem(pi)
             for t in sorted(trials, key=lambda x: (x.condition_code, x.trial_number)):
-                review = (t.sync.get("pair_status") == "review") or len(t.videos) < 2
-                glyph = "⚠" if review and t.status != "analysed" else STATUS_GLYPH.get(t.status, "○")
+                review = t.sync.get("pair_status") == "review"
+                glyph = "⚠" if review else STATUS_GLYPH.get(t.status, "○")
                 ti = QTreeWidgetItem([f"{glyph}  {trial_title(p, t)}"])
                 ti.setData(0, Qt.ItemDataRole.UserRole, ("trial", t.id))
-                tip = [t.id]
+                state = ("Pairing needs review" if review else
+                         {"analysed": "Analysed", "new": "Not analysed yet", "error": "Analysis failed"}.get(t.status, t.status))
+                tip = [f"{t.id} · {state}" + (" · single camera view" if len(t.videos) < 2 else "")]
                 if t.sync.get("pair_score") is not None:
                     tip.append(f"Pair match {t.sync['pair_score']:.2f} ({t.sync.get('pair_status')})")
                 if t.notes:

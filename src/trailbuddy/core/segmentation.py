@@ -25,7 +25,8 @@ def candidate_segments(pose, min_drop_legs: float = 0.5) -> list[dict]:
     with warnings.catch_warnings():  # frames with no hip keypoints give NaN (expected)
         warnings.simplefilter("ignore", RuntimeWarning)
         hip = np.nanmean(pose.xy[:, [23, 24]], axis=1)
-    leg = np.nanmedian(np.linalg.norm(pose.xy[:, 23] - pose.xy[:, 27], axis=1))
+    leg = np.nanmedian(np.concatenate([np.linalg.norm(pose.xy[:, 23] - pose.xy[:, 27], axis=1),
+                                       np.linalg.norm(pose.xy[:, 24] - pose.xy[:, 28], axis=1)]))
     ok = np.isfinite(hip).all(axis=1)
     if ok.sum() < 10 or not np.isfinite(leg) or leg <= 0:
         return []
@@ -34,6 +35,11 @@ def candidate_segments(pose, min_drop_legs: float = 0.5) -> list[dict]:
     hy = median_filter(np.interp(t, t[ok], hip[ok, 1]), size=w, mode="nearest") / leg
     sp = np.hypot(np.gradient(hx, t), np.gradient(hy, t))
     sp = median_filter(sp, size=w, mode="nearest")
+    # inside long tracking gaps the interpolated hip is invented: no movement can be claimed there
+    edges_g = np.flatnonzero(np.diff(np.concatenate(([0], (~ok).astype(int), [0]))))
+    for a, b in zip(edges_g[::2], edges_g[1::2]):
+        if t[min(b, len(t) - 1)] - t[a] > BRIDGE_S:
+            sp[a:b] = 0.0
     moving = sp > MOVE_LEGS_PER_S
     # bridge short pauses
     edges = np.flatnonzero(np.diff(np.concatenate(([0], moving.astype(int), [0]))))
@@ -58,7 +64,7 @@ def candidate_segments(pose, min_drop_legs: float = 0.5) -> list[dict]:
 
 
 def best_segment(segs: list[dict]) -> dict | None:
-    """The longest descent, else the longest segment."""
+    """The descent with the largest hip drop (then the longest), else the longest segment."""
     if not segs:
         return None
     desc = [s for s in segs if s["label"] == "descent"]

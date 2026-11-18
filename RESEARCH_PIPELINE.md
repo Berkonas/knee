@@ -174,7 +174,7 @@ angular momentum about the COM the ground reaction force points close to the COM
 
   F = (F_x, F_y) = F_foot · ((x_COM − x_COP)/(y_COM − y_COP), 1)
 
-A purely vertical force (F_x = 0) can be selected instead; it gives an upper bound.
+A purely vertical force (F_x = 0) can be selected instead. This is an alternative assumption, not a bound: when the COM is behind the COP (early stance) the vertical force gives a *smaller* moment. The sensitivity range includes both directions.
 
 **Knee extensor moment** (internal, + = extensor; minus the external moment of F about the knee, with segment
 weight and inertia below the knee neglected):

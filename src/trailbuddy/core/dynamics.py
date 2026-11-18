@@ -222,8 +222,8 @@ def quasi_static_knee(kin, side: str, f_vertical: np.ndarray, cop: np.ndarray,
 
     M_ext = (x_knee - x_COP) * F_y + (y_COP - y_knee) * F_x   (minus the external moment of F about the knee)
 
-    com=None: the force is vertical (F_x = 0), so M_ext = F_v * (x_knee - x_COP), an upper bound when the
-    true force tilts toward the body. com given: the force is directed from the COP toward the COM.
+    com=None: the force is vertical (F_x = 0), so M_ext = F_v * (x_knee - x_COP). This is an alternative
+    assumption, not a bound (it is smaller when the COM is behind the COP). com given: COP -> COM direction.
     """
     if kin.units != "m":
         raise ValueError("Knee moment requires a metric scale (calibrate distance or enter height).")

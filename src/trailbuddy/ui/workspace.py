@@ -557,6 +557,14 @@ class WorkspacePage(QWidget):
     def _trial_meta_changed(self, *_):
         if self._loading or not self.trial:
             return
+        if self.state.busy and (self.inspector.t_cond.currentData() != self.trial.condition_code
+                                or self.inspector.t_num.value() != self.trial.trial_number):
+            self._loading = True
+            self.inspector.t_cond.setCurrentIndex(max(0, self.inspector.t_cond.findData(self.trial.condition_code)))
+            self.inspector.t_num.setValue(self.trial.trial_number)
+            self._loading = False
+            self.state.refuse_if_busy(self)
+            return
         ins = self.inspector
         t = self.trial
         new_code = ins.t_cond.currentData() or t.condition_code
@@ -703,6 +711,11 @@ class WorkspacePage(QWidget):
 
     # ---- run --------------------------------------------------------------------------------
     def _busy(self, on: bool):
+        self.state.busy = on
+        if on and getattr(self, "worker", None) is not None:
+            self.state.workers.append(self.worker)
+        elif not on:
+            self.state.workers.clear()
         ins = self.inspector
         ins.btn_run.setEnabled(not on)
         ins.btn_all.setEnabled(not on)
@@ -710,6 +723,8 @@ class WorkspacePage(QWidget):
         ins.progress.setVisible(on)
 
     def run(self):
+        if self.state.refuse_if_busy(self):
+            return
         if not self.trial:
             error_box(self, "Select a trial", "Choose a trial in the experiment browser first.")
             return
@@ -748,7 +763,7 @@ class WorkspacePage(QWidget):
             error_box(self, "Analysis failed", msg)
 
     def run_all(self, tids: list[str] | None = None):
-        if self.project is None or not self.project.trials:
+        if self.project is None or not self.project.trials or self.state.refuse_if_busy(self):
             return
         if tids is not None and not isinstance(tids, list):  # clicked() passes a bool
             tids = None
@@ -834,15 +849,21 @@ class WorkspacePage(QWidget):
 
     # ---- trial management -------------------------------------------------------------------
     def edit_trial_details(self, tid: str):
+        if self.state.refuse_if_busy(self):
+            return
         from .project_page import TrialDialog
         t = self.project.trial(tid)
         dlg = TrialDialog(self, self.project, t)
         if dlg.exec():
-            dlg.apply(t, t.videos)
+            err = dlg.apply_existing(self.project, t)
+            if err:
+                error_box(self, "Cannot change the trial", err)
             self.state.save()
             self.state.trialsChanged.emit()
 
     def delete_trials(self, tids: list[str]):
+        if self.state.refuse_if_busy(self):
+            return
         n = len(tids)
         msg = (f"Delete {n} trial{'s' if n > 1 else ''} ({', '.join(tids[:6])}{'…' if n > 6 else ''})?\n\n"
                "The trials and their analysis results move to the study's trash and can be restored "
@@ -857,6 +878,8 @@ class WorkspacePage(QWidget):
         self.state.status.emit(f"Deleted {n} trial(s). Restore them from the browser's right-click menu.")
 
     def restore_trials(self):
+        if self.state.refuse_if_busy(self):
+            return
         entries = self.project.deleted_trials() if self.project else []
         if not entries:
             QMessageBox.information(self, "Restore trials", "There are no deleted trials in this study.")
@@ -875,11 +898,15 @@ class WorkspacePage(QWidget):
         self.browser.select_trial(t.id)
 
     def duplicate_trial(self, tid: str):
+        if self.state.refuse_if_busy(self):
+            return
         t = self.project.duplicate_trial(tid)
         self.state.trialsChanged.emit()
         self.browser.select_trial(t.id)
 
     def clear_cache(self, tids: list[str]):
+        if self.state.refuse_if_busy(self):
+            return
         n = self.project.clear_cache(tids)
         self.state.status.emit(f"Removed {n} cached tracking file(s). Tracking reruns at the next analysis.")
 

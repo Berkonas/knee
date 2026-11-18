@@ -7,14 +7,21 @@ written to <project>/trials/<trial_id>/. Participant names are not stored - use 
 from __future__ import annotations
 
 import json
+import os
 import re
+import threading
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 SCHEMA_VERSION = 2
+_SAVE_LOCK = threading.RLock()
 
-TASKS = {"stair_descent": "Stair descent", "stair_ascent": "Stair ascent", "step_down": "Single step-down",
-         "level_walk": "Level walking", "downhill_walk": "Downhill walking", "uphill_walk": "Uphill walking"}
+TASKS = {"stair_descent": "Stair descent", "downhill_walk": "Downhill ramp", "level_walk": "Flat ground",
+         "stair_ascent": "Stair ascent", "step_down": "Single step-down", "uphill_walk": "Uphill walking"}
+# Short code added to trial IDs so the same condition and number can exist on several terrains.
+# Stair descent has none, which keeps the IDs of existing studies unchanged.
+TASK_CODES = {"stair_descent": "", "downhill_walk": "RAMP", "level_walk": "FLAT", "stair_ascent": "UP",
+              "step_down": "STEP", "uphill_walk": "UPHILL"}
 
 
 @dataclass
@@ -29,6 +36,10 @@ EXPERIMENTS: dict[str, dict] = {
     "exp1": {"name": "Experiment 1 - simple comparison", "task": "stair descent", "reps": 3,
              "conditions": [Condition("C0", "No poles", False), Condition("C1", "Standard poles", True, 0.0)]},
     "exp2": {"name": "Experiment 2 - pole length", "task": "stair descent", "reps": 3,
+             "conditions": [Condition("C0", "No poles", False), Condition("C1", "Standard poles", True, 0.0),
+                            Condition("C2", "Standard - 5 cm", True, -5.0), Condition("C3", "Standard + 5 cm", True, 5.0)]},
+    "full": {"name": "TrailBuddy full design - 4 pole conditions x 3 terrains", "task": "all", "reps": 3,
+             "tasks": ["level_walk", "downhill_walk", "stair_descent"],
              "conditions": [Condition("C0", "No poles", False), Condition("C1", "Standard poles", True, 0.0),
                             Condition("C2", "Standard - 5 cm", True, -5.0), Condition("C3", "Standard + 5 cm", True, 5.0)]},
     "exp3": {"name": "Experiment 3 - controlled step-down", "task": "single step-down", "reps": 3,
@@ -123,7 +134,8 @@ class Trial:
 
     @property
     def id(self) -> str:
-        return f"{self.participant_id}_{self.condition_code}_T{self.trial_number:02d}"
+        code = TASK_CODES.get(self.task, "")
+        return f"{self.participant_id}_{self.condition_code}{'_' + code if code else ''}_T{self.trial_number:02d}"
 
 
 @dataclass
@@ -227,6 +239,11 @@ class Project:
         t = _trial_from_dict(json.loads((trash_entry / "trial.json").read_text()), self.root)
         if any(q.id == t.id for q in self.trials):
             raise ValueError(f"A trial {t.id} already exists; rename or delete it first.")
+        self.participant(t.participant_id)  # KeyError if the participant was removed meanwhile
+        self.condition(t.condition_code)
+        target = self.root / "trials" / t.id
+        if (trash_entry / "results").exists() and target.exists():
+            raise ValueError(f"A results folder for {t.id} already exists ({target}); move it away first.")
         self.trials.append(t)
         if (trash_entry / "results").exists():
             shutil.move(str(trash_entry / "results"), str(self.root / "trials" / t.id))
@@ -240,20 +257,26 @@ class Project:
         new = Trial(**{**asdict(t), "videos": t.videos,
                        "condition_code": condition_code or t.condition_code,
                        "trial_number": trial_number or t.trial_number})
-        self.condition(new.condition_code)
+        cond = self.condition(new.condition_code)
         if new.id != tid and any(q.id == new.id for q in self.trials):
             raise ValueError(f"Trial {new.id} already exists.")
-        t.condition_code, t.trial_number = new.condition_code, new.trial_number
-        old_dir = self.root / "trials" / tid
+        old_dir, new_dir = self.root / "trials" / tid, self.root / "trials" / new.id
+        if new.id != tid and new_dir.exists():
+            raise ValueError(f"A results folder {new_dir.name} already exists; move it away first.")
         if new.id != tid and old_dir.exists():
-            old_dir.rename(self.root / "trials" / new.id)
+            old_dir.rename(new_dir)  # move first: if this fails, nothing has changed
+        if new.condition_code != t.condition_code:
+            t.status = "new"  # results were computed for the old condition (poles, pole length): re-analyse
+            std = self.participant(t.participant_id).standard_pole_length_cm
+            t.pole_length_cm = std + (cond.pole_offset_cm or 0.0) if (std is not None and cond.uses_poles) else None
+        t.condition_code, t.trial_number = new.condition_code, new.trial_number
         self.save()
         return t
 
     def duplicate_trial(self, tid: str) -> Trial:
         t = self.trial(tid)
         d = asdict(t)
-        d.update(trial_number=self.next_trial_number(t.participant_id, t.condition_code), status="new",
+        d.update(trial_number=self.next_trial_number(t.participant_id, t.condition_code, t.task), status="new",
                  notes=(t.notes + " (copy)").strip())
         new = _trial_from_dict(d, self.root)
         self.trials.append(new)
@@ -269,18 +292,33 @@ class Project:
         stems = None if tids is None else {Path(v.path).stem for tid in tids for v in self.trial(tid).videos}
         n = 0
         for f in cache.iterdir():
-            if f.is_file() and (stems is None or f.name.split(".")[0] in stems):
+            if f.is_file() and (stems is None or any(f.name.startswith(st + ".") for st in stems)):
                 f.unlink()
                 n += 1
         return n
 
-    def next_trial_number(self, pid: str, code: str) -> int:
-        nums = [t.trial_number for t in self.trials if t.participant_id == pid and t.condition_code == code]
+    def next_trial_number(self, pid: str, code: str, task: str | None = None) -> int:
+        nums = [t.trial_number for t in self.trials if t.participant_id == pid and t.condition_code == code
+                and (task is None or t.task == task)]
         return max(nums, default=0) + 1
 
     def planned_trials(self) -> int:
-        reps = EXPERIMENTS.get(self.experiment, {}).get("reps", 3)
-        return len(self.participants) * len(self.conditions) * reps
+        exp = EXPERIMENTS.get(self.experiment, {})
+        n_tasks = len(exp.get("tasks", [None]))
+        return len(self.participants) * len([c for c in self.conditions if c.code != "UNSET"]) * exp.get("reps", 3) * n_tasks
+
+    def update_trial_id(self, old_id: str, t: Trial) -> None:
+        """Call after changing a trial's task, condition or number: moves its results folder to the new ID and
+        refuses an ID that another trial already has (the change is undone)."""
+        if t.id == old_id:
+            return
+        if sum(q.id == t.id for q in self.trials) > 1:
+            raise ValueError(f"Trial {t.id} already exists.")
+        old_dir, new_dir = self.root / "trials" / old_id, self.root / "trials" / t.id
+        if new_dir.exists():
+            raise ValueError(f"A results folder {new_dir.name} already exists; move it away first.")
+        if old_dir.exists():
+            old_dir.rename(new_dir)
 
     def trial_dir(self, tid: str) -> Path:
         assert self.root is not None
@@ -293,23 +331,47 @@ class Project:
         d = {"schema": SCHEMA_VERSION, "name": self.name, "experiment": self.experiment,
              "conditions": [asdict(c) for c in self.conditions],
              "participants": [asdict(p) for p in self.participants],
-             "trials": [asdict(t) for t in self.trials]}
+             "trials": [self._trial_dict(t) for t in self.trials]}
+        return d
+
+    def _trial_dict(self, t: Trial) -> dict:
+        """Video paths are stored relative to the study folder when they are near it (e.g. ../../Videos/x.mov), so
+        a study folder moved together with its videos still opens and no home-folder path is written."""
+        d = asdict(t)
+        for v in d["videos"]:
+            try:
+                rel = os.path.relpath(v["path"], self.root)
+            except ValueError:  # different drive on Windows
+                continue
+            if rel.count("..") <= 3 and not os.path.isabs(rel):
+                v["path"] = Path(rel).as_posix()
         return d
 
     def save(self) -> Path:
         assert self.root is not None
         path = self.root / "project.json"
-        if path.exists():  # keep the last 20 versions of the study file
-            import time
+        with _SAVE_LOCK:  # analysis threads and the UI thread may both save
+            return self._save_locked(path)
 
+    def _save_locked(self, path: Path) -> Path:
+        import os
+        import tempfile
+        import time
+
+        if path.exists():  # keep the last 20 versions of the study file
             bdir = self.root / "backups"
             bdir.mkdir(exist_ok=True)
-            (bdir / f"project-{time.strftime('%Y%m%d-%H%M%S')}.json").write_bytes(path.read_bytes())
+            stamp = time.strftime("%Y%m%d-%H%M%S") + f"-{int(time.time() * 1000) % 1000:03d}"
+            dest, k = bdir / f"project-{stamp}.json", 1
+            while dest.exists():  # several saves in the same millisecond: never overwrite a backup
+                dest, k = bdir / f"project-{stamp}-{k}.json", k + 1
+            dest.write_bytes(path.read_bytes())
             for old in sorted(bdir.glob("project-*.json"))[:-20]:
                 old.unlink()
-        tmp = path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(self.to_dict(), indent=2))
-        tmp.replace(path)
+        fd, tmp = tempfile.mkstemp(prefix="project.", suffix=".json.tmp", dir=self.root)
+        with os.fdopen(fd, "w") as f:
+            f.write(json.dumps(self.to_dict(), indent=2))
+        os.replace(tmp, path)
         return path
 
     @classmethod

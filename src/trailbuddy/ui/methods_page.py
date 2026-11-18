@@ -19,7 +19,7 @@ SUMMARY = """
 <table cellspacing="0" cellpadding="4">
 <tr><td><b>Support</b></td><td>F<sub>feet</sub> + Σ F<sub>pole</sub>·cos θ<sub>pole</sub> ≈ m·g (static) or m·(g + a<sub>COM</sub>)</td></tr>
 <tr><td><b>Knee moment</b></td><td>M<sub>knee</sub> = (x<sub>knee</sub> − x<sub>COP</sub>)·F<sub>y</sub> + (y<sub>COP</sub> − y<sub>knee</sub>)·F<sub>x</sub>;
-force from the COP toward the body COM (vertical = upper bound)</td></tr>
+force from the COP toward the body COM (vertical force is an alternative assumption; the sensitivity range covers both)</td></tr>
 <tr><td><b>Quadriceps</b></td><td>F<sub>quad</sub> ≈ M<sub>knee</sub> / r, r = 5 cm (4–6 cm). Net-moment equivalent, not tendon or contact force</td></tr>
 <tr><td><b>Shoulder, elbow</b></td><td>M = (r<sub>grip</sub> − r<sub>joint</sub>) × F<sub>pole</sub> + arm-segment weight terms</td></tr>
 <tr><td><b>Power, work</b></td><td>P = M<sub>knee</sub>·ω<sub>ext</sub>; negative work = ∫ min(P, 0) dt; impulse = ∫ max(M, 0) dt</td></tr>

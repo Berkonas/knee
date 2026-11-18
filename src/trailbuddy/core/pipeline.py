@@ -21,8 +21,8 @@ from .landmarks import PoseSeries
 from .pole import PoleTrack
 from .video import probe
 
-PIPELINE_VERSION = 3  # 3: tracked crops + RTMPose-x default
-POLE_VERSION = 7   # bump when the pole detector changes: poles are recomputed, cached poses are reused
+PIPELINE_VERSION = 4  # 4: identity gates, crop clipping, out-of-image keypoints dropped
+POLE_VERSION = 8   # bump when the pole detector changes: poles are recomputed, cached poses are reused
 
 
 def _key(video: str, settings: dict) -> dict:
@@ -50,7 +50,14 @@ def _read_pose(cache: Path, video: str, settings: dict):
     info = probe(video)
     pose = PoseSeries.from_dataframe(pd.read_csv(pose_p), meta["fps"], info.width, info.height, video)
     pose.meta.update(meta.get("pose_meta", {}))
+    pose.t = exact_times(pose.t, meta["fps"] * int(pose.meta.get("stride", 1) or 1))
     return pose, meta
+
+
+def exact_times(t_rounded: np.ndarray, video_fps: float) -> np.ndarray:
+    """Cached times are written with limited precision (0.01 s in older caches). Each sample is a video frame,
+    so snap to frame index / fps: rounding errors (< half a frame) vanish and dt is exactly 1/fps again."""
+    return np.round(np.asarray(t_rounded, float) * video_fps) / video_fps
 
 
 def _read_poles(cache: Path, video: str, settings: dict, meta: dict):
@@ -61,7 +68,7 @@ def _read_poles(cache: Path, video: str, settings: dict, meta: dict):
     poles = {}
     for s in ("left", "right"):
         if f"{s}_tip_x" in df:
-            poles[s] = PoleTrack(df.time_s.to_numpy(), df[[f"{s}_tip_x", f"{s}_tip_y"]].to_numpy(), None,
+            poles[s] = PoleTrack(exact_times(df.time_s.to_numpy(), meta["fps"] * int(meta.get("pose_meta", {}).get("stride", 1) or 1)), df[[f"{s}_tip_x", f"{s}_tip_y"]].to_numpy(), None,
                                  df[f"{s}_conf"].to_numpy(), df[f"{s}_src"].to_numpy().astype(int), "auto_wrist_segment")
     return poles
 
@@ -114,7 +121,8 @@ def process_recording(video: str, cache: str | Path, settings: dict | None = Non
         meta = {"key": _key(video, settings), "fps": pose.fps, "pose_meta": pose.meta,
                 "detection_rate": pose.detection_rate()}
         pose_p, _, _ = _paths(cache, video, _tag(settings))
-        pose.to_dataframe().to_csv(pose_p, index=False, float_format="%.2f")
+        df = pose.to_dataframe()
+        df.to_csv(pose_p, index=False, float_format="%.6g")
     poles = pole_auto.track_poles(video, pose, 0, progress=p(0.8, 1.0, f"Tracking poles in {name}"),
                                   cancelled=cancelled)
     _, poles_p, meta_p = _paths(cache, video, _tag(settings))

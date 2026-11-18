@@ -26,6 +26,8 @@ def table(headers):
     t.setAlternatingRowColors(True)
     t.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
     t.horizontalHeader().setStretchLastSection(True)
+    t.horizontalHeader().setMinimumSectionSize(60)
+    t.horizontalHeader().setTextElideMode(Qt.TextElideMode.ElideRight)
     return t
 
 
@@ -219,6 +221,17 @@ class TrialDialog(QDialog):
         trial.surface, trial.force_data = self.surface.text().strip(), self.force.text().strip()
         return trial
 
+    def apply_existing(self, project: Project, trial: Trial) -> str | None:
+        """Apply edits to an existing trial; when its ID changes (task), move the results. Returns an error or None."""
+        old_id, old_task = trial.id, trial.task
+        self.apply(trial, trial.videos)
+        try:
+            project.update_trial_id(old_id, trial)
+        except (ValueError, OSError) as e:
+            trial.task = old_task
+            return str(e)
+        return None
+
 
 class ProjectPage(QWidget):
     def __init__(self, state):
@@ -253,6 +266,9 @@ class ProjectPage(QWidget):
         self.quality.setObjectName("warnBanner")
         self.quality.setWordWrap(True)
         self.quality.setTextFormat(Qt.TextFormat.RichText)
+        self._quality_open = False
+        self._quality_items: list[str] = []
+        self.quality.linkActivated.connect(self._toggle_quality)
         self.quality.hide()
         lay.addWidget(self.quality)
         split = QSplitter(Qt.Orientation.Vertical)
@@ -332,7 +348,8 @@ class ProjectPage(QWidget):
                 t.setRowCount(0)
             self.quality.hide()
             return
-        self.info.setText(f"{p.name}  ·  {EXPERIMENTS.get(p.experiment, {}).get('name', p.experiment)}  ·  {p.root}")
+        self.info.setText(f"{p.name}  ·  {EXPERIMENTS.get(p.experiment, {}).get('name', p.experiment)}")
+        self.info.setToolTip(str(p.root))
         fill(self.ptable, [(q.id, q.body_mass_kg if q.body_mass_kg is not None else "missing",
                             q.height_m if q.height_m is not None else "missing", q.standard_pole_length_cm,
                             f"{len(q.segments)} of {len(SEGMENT_FIELDS)} measured", q.notes)
@@ -346,7 +363,8 @@ class ProjectPage(QWidget):
                            for t in p.trials])
         chk = study_checks(p)
         icon = {"error": "⛔", "warn": "⚠", "info": "ℹ"}
-        self.quality.setText("<b>Before comparing conditions</b><br>" + "<br>".join(f"{icon[lev]} {m}" for lev, m in chk))
+        self._quality_items = [f"{icon[lev]} {m}" for lev, m in chk]
+        self._render_quality()
         self.quality.setVisible(bool(chk))
         done = sum(t.status == "analysed" for t in p.trials)
         self.progress_label.setText(f"{done} analysed · {len(p.trials)} logged · {p.planned_trials()} planned")
@@ -519,16 +537,22 @@ class ProjectPage(QWidget):
             self.state.openTrial.emit(t.id, "two")
 
     def edit_trial(self):
+        if self.state.refuse_if_busy(self):
+            return
         tid = self._selected(self.ttable)
         if not tid:
             return
         t = self.project.trial(tid)
         dlg = TrialDialog(self, self.project, t)
         if dlg.exec():
-            dlg.apply(t, t.videos)
+            err = dlg.apply_existing(self.project, t)
+            if err:
+                error_box(self, "Cannot change the trial", err)
             self._changed()
 
     def remove_trial(self):
+        if self.state.refuse_if_busy(self):
+            return
         tid = self._selected(self.ttable)
         if not tid:
             return
@@ -538,7 +562,20 @@ class ProjectPage(QWidget):
             self.project.delete_trials([tid])
             self._changed()
 
+    def _toggle_quality(self, *_):
+        self._quality_open = not self._quality_open
+        self._render_quality()
+
+    def _render_quality(self):
+        n = len(self._quality_items)
+        head = f"<b>{n} thing{'s' if n != 1 else ''} to check before comparing conditions</b>"
+        link = f' &nbsp;<a href="#">{"Hide" if self._quality_open else "Show"} details</a>'
+        body = ("<br>" + "<br>".join(self._quality_items)) if self._quality_open else ""
+        self.quality.setText(head + link + body)
+
     def delete_study(self):
+        if self.state.refuse_if_busy(self):
+            return
         from PySide6.QtCore import QFile
         p = self.project
         if p is None:
